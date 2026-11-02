@@ -231,6 +231,60 @@
                     @endif
                 </div>
 
+                @if (\Illuminate\Support\Facades\Schema::hasTable('donor_commitments'))
+                    @php
+                        $incomingCommitments = $bloodRequest->commitments()
+                            ->with('donor')
+                            ->activeCommitment()
+                            ->orderBy('estimated_arrival_at')
+                            ->get();
+                    @endphp
+                    <div class="dc-card p-4 mb-4">
+                        <div class="d-flex align-items-center justify-content-between gap-2 mb-3">
+                            <div>
+                                <div class="dc-eyebrow">Respons Komunitas</div>
+                                <h2 class="dc-title-3 mb-0 mt-1">Pendonor Berkomitmen</h2>
+                            </div>
+                            <span class="dc-pill {{ $incomingCommitments->isNotEmpty() ? 'dc-pill-success' : 'dc-pill-neutral' }} dc-tabular">
+                                {{ $incomingCommitments->count() }} Siaga
+                            </span>
+                        </div>
+
+                        @forelse ($incomingCommitments as $pledge)
+                            <div class="p-3 rounded-3 bg-light border mb-2">
+                                <div class="d-flex align-items-center justify-content-between gap-2 mb-1">
+                                    <span class="fw-semibold small text-dark">
+                                        <i class="bi bi-person-heart text-danger me-1"></i>
+                                        {{ $pledge->masked_donor_alias }}
+                                        @if ($pledge->donor?->blood_group_label)
+                                            <span class="badge text-bg-danger ms-1 dc-tabular">{{ $pledge->donor->blood_group_label }}</span>
+                                        @endif
+                                    </span>
+                                    <span class="dc-pill {{ $pledge->status->pillClass() }} py-0 px-2" style="font-size: 0.7rem;">
+                                        {{ $pledge->status->label() }}
+                                    </span>
+                                </div>
+                                <div class="dc-caption dc-tabular">
+                                    <i class="bi bi-clock me-1"></i>
+                                    Estimasi Tiba: <strong class="text-dark">{{ $pledge->estimated_arrival_at->translatedFormat('d M, H:i') }} WIB</strong>
+                                    ({{ $pledge->estimated_arrival_at->diffForHumans() }})
+                                </div>
+                                @if (Route::has('commitments.show'))
+                                    <div class="mt-2">
+                                        <a href="{{ route('commitments.show', $pledge) }}" class="btn btn-dc-secondary btn-sm w-100">
+                                            Lihat Rincian Kedatangan
+                                        </a>
+                                    </div>
+                                @endif
+                            </div>
+                        @empty
+                            <p class="dc-caption mb-0">
+                                Belum ada relawan pendonor yang mengirim estimasi waktu kedatangan pada permohonan ini.
+                            </p>
+                        @endforelse
+                    </div>
+                @endif
+
                 <div class="dc-card p-4">
                     <div class="dc-eyebrow mb-3">Jejak Siklus Permohonan</div>
                     <div class="vstack gap-3 small">

@@ -88,6 +88,11 @@ class User extends Authenticatable
         return $this->hasMany(BloodRequest::class, 'requester_id');
     }
 
+    public function donorCommitments(): HasMany
+    {
+        return $this->hasMany(DonorCommitment::class, 'donor_id');
+    }
+
     public function hasRole(UserRole|string ...$roles): bool
     {
         $current = $this->role instanceof UserRole ? $this->role->value : (string) $this->role;
