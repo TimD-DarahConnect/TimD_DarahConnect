@@ -18,6 +18,7 @@ class DatabaseSeeder extends Seeder
             StaffUserSeeder::class,
             BloodRequestSeeder::class,
             DonorCommitmentSeeder::class,
+            DonationScheduleSeeder::class,
         ]);
     }
 }
