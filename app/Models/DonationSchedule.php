@@ -83,6 +83,11 @@ class DonationSchedule extends Model
         return $this->hasMany(DonationSession::class)->orderBy('sort_order')->orderBy('start_time');
     }
 
+    public function bookings(): HasMany
+    {
+        return $this->hasMany(DonorBooking::class, 'donation_schedule_id');
+    }
+
     public function scopeUddBuilding(Builder $query): Builder
     {
         return $query->where('schedule_type', DonationScheduleType::UDD_BUILDING->value);
@@ -132,3 +137,4 @@ class DonationSchedule extends Model
         return (int) min(100, round(($this->total_booked / $this->total_quota) * 100));
     }
 }
+
