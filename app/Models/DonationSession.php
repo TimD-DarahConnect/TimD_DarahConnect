@@ -6,6 +6,7 @@ use App\Enums\SessionOperationalStatus;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class DonationSession extends Model
 {
@@ -38,6 +39,11 @@ class DonationSession extends Model
         return $this->belongsTo(DonationSchedule::class, 'donation_schedule_id');
     }
 
+    public function bookings(): HasMany
+    {
+        return $this->hasMany(DonorBooking::class, 'donation_session_id');
+    }
+
     public function getTimeRangeLabelAttribute(): string
     {
         return substr((string) $this->start_time, 0, 5).' – '.substr((string) $this->end_time, 0, 5).' WIB';
@@ -63,3 +69,4 @@ class DonationSession extends Model
             && $this->remaining_quota > 0;
     }
 }
+
