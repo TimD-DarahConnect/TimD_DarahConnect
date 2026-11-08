@@ -13,6 +13,12 @@ Route::middleware(['auth', 'role:pencari_darah'])
         Route::get('/{bloodRequest}', [EmergencyRequestController::class, 'show'])
             ->whereNumber('bloodRequest')
             ->name('show');
+        Route::get('/{bloodRequest}/edit', [EmergencyRequestController::class, 'edit'])
+            ->whereNumber('bloodRequest')
+            ->name('edit');
+        Route::put('/{bloodRequest}', [EmergencyRequestController::class, 'update'])
+            ->whereNumber('bloodRequest')
+            ->name('update');
     });
 
 Route::middleware(['auth', 'role:pencari_darah,petugas_udd,petugas_rs,admin'])
