@@ -112,6 +112,13 @@ class BloodRequest extends Model
         return $this->hasMany(DonorCommitment::class);
     }
 
+    public function verifications(): HasMany
+    {
+        return $this->hasMany(RequestVerification::class)
+            ->orderByDesc('decided_at')
+            ->orderByDesc('id');
+    }
+
     public function scopeForRequester(Builder $query, int $userId): Builder
     {
         return $query->where('requester_id', $userId);
@@ -177,6 +184,11 @@ class BloodRequest extends Model
     public function hasReferralLetter(): bool
     {
         return ! empty($this->referral_letter_path);
+    }
+
+    public function isPendingVerification(): bool
+    {
+        return $this->status === BloodRequestStatus::PENDING_VERIFICATION;
     }
 
     public function isEditableByRequester(): bool

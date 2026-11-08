@@ -14,4 +14,7 @@ Route::middleware(['auth', 'role:petugas_udd,admin'])
         Route::get('/{bloodRequest}/document', [MedicalVerificationController::class, 'document'])
             ->whereNumber('bloodRequest')
             ->name('document');
+        Route::post('/{bloodRequest}/approve', [MedicalVerificationController::class, 'approve'])
+            ->whereNumber('bloodRequest')
+            ->name('approve');
     });

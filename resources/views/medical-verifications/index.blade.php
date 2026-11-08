@@ -245,7 +245,9 @@
                                         {{ $item->bags_needed }} Kantong {{ $item->component_type->value }}
                                     </div>
                                     <div class="dc-caption">
-                                        @if ($item->needed_at)
+                                        @if ($item->status->value === 'active' && $item->expires_at)
+                                            Aktif s.d.: <span class="dc-tabular fw-medium text-success">{{ $item->expires_at->translatedFormat('d M, H:i') }} WIB</span>
+                                        @elseif ($item->needed_at)
                                             Target: <span class="dc-tabular fw-medium text-dark">{{ $item->needed_at->translatedFormat('d M, H:i') }} WIB</span>
                                         @else
                                             DPJP: {{ $item->doctor_name ?: '-' }}

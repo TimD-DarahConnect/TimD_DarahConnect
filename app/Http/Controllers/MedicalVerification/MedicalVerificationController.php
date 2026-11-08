@@ -5,10 +5,17 @@ namespace App\Http\Controllers\MedicalVerification;
 use App\Enums\BloodRequestStatus;
 use App\Enums\BloodType;
 use App\Enums\UrgencyLevel;
+use App\Enums\VerificationDecision;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\MedicalVerification\ApproveBloodRequest;
 use App\Models\BloodRequest;
+use App\Models\RequestVerification;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\View\View;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -131,6 +138,10 @@ class MedicalVerificationController extends Controller
 
         $bloodRequest->load(['requester.region', 'facility.region', 'verifier']);
 
+        $verificationLogs = Schema::hasTable('request_verifications')
+            ? $bloodRequest->verifications()->with('reviewer')->get()
+            : collect();
+
         $nextPendingQuery = BloodRequest::query()
             ->where('status', BloodRequestStatus::PENDING_VERIFICATION->value)
             ->where('id', '!=', $bloodRequest->id);
@@ -150,14 +161,118 @@ class MedicalVerificationController extends Controller
                 : number_format($kb, 0).' KB';
         }
 
+        $recommendedHours = match ($bloodRequest->urgency_level) {
+            UrgencyLevel::CRITICAL => 48,
+            UrgencyLevel::URGENT => 72,
+            default => 120,
+        };
+
+        $defaultExpiresAt = now()->addHours($recommendedHours)->startOfMinute();
+        if (
+            $bloodRequest->needed_at !== null
+            && $bloodRequest->needed_at->isAfter(now()->addHours(2))
+            && $bloodRequest->needed_at->isBefore(now()->addDays(12))
+        ) {
+            $candidate = $bloodRequest->needed_at->copy()->addHours(6)->startOfMinute();
+            if ($candidate->isAfter(now()->addHours(12))) {
+                $defaultExpiresAt = $candidate;
+            }
+        }
+
         return view('medical-verifications.show', [
             'bloodRequest' => $bloodRequest,
             'nextPendingRequest' => $nextPendingRequest,
+            'verificationLogs' => $verificationLogs,
+            'defaultExpiresAt' => $defaultExpiresAt->format('Y-m-d\TH:i'),
             'isSevereAnemia' => $bloodRequest->hemoglobin_level !== null && $bloodRequest->hemoglobin_level < 7.0,
             'isPdfAttachment' => $isPdfAttachment,
             'isImageAttachment' => $isImageAttachment,
             'fileSizeFormatted' => $fileSizeFormatted,
         ]);
+    }
+
+    /**
+     * Approve a verified emergency blood request, set its active publication deadline, and publish to donors.
+     */
+    public function approve(ApproveBloodRequest $request, BloodRequest $bloodRequest): RedirectResponse
+    {
+        if ($bloodRequest->status === BloodRequestStatus::DRAFT) {
+            abort(404, 'Draf permohonan belum dikirim ke antrean verifikasi medis.');
+        }
+
+        $validated = $request->validated();
+        $expiresAt = Carbon::parse($validated['expires_at']);
+        $notes = $validated['verification_notes'] ?? null;
+
+        $abortReason = null;
+        $abortLevel = 'warning';
+
+        $approvedRequest = DB::transaction(function () use (
+            $bloodRequest,
+            $request,
+            $expiresAt,
+            $notes,
+            &$abortReason,
+            &$abortLevel
+        ): ?BloodRequest {
+            $locked = BloodRequest::query()
+                ->whereKey($bloodRequest->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            if ($locked->status !== BloodRequestStatus::PENDING_VERIFICATION) {
+                $abortReason = "Permohonan {$locked->request_code} saat ini berstatus \"{$locked->status->label()}\" sehingga tidak dapat disetujui ulang.";
+                $abortLevel = 'warning';
+
+                return null;
+            }
+
+            if (! $locked->hasReferralLetter()) {
+                $abortReason = "Permohonan {$locked->request_code} belum melampirkan berkas surat rujukan dokter sehingga tidak dapat disahkan untuk publikasi.";
+                $abortLevel = 'error';
+
+                return null;
+            }
+
+            $decidedAt = now();
+            $previousStatus = $locked->status->value;
+
+            $locked->update([
+                'status' => BloodRequestStatus::ACTIVE->value,
+                'verified_by' => $request->user()->id,
+                'verified_at' => $decidedAt,
+                'verification_notes' => $notes,
+                'expires_at' => $expiresAt,
+            ]);
+
+            if (Schema::hasTable('request_verifications')) {
+                RequestVerification::create([
+                    'blood_request_id' => $locked->id,
+                    'reviewer_id' => $request->user()->id,
+                    'decision' => VerificationDecision::APPROVED->value,
+                    'previous_status' => $previousStatus,
+                    'resulting_status' => BloodRequestStatus::ACTIVE->value,
+                    'expires_at' => $expiresAt,
+                    'notes' => $notes,
+                    'decided_at' => $decidedAt,
+                ]);
+            }
+
+            return $locked->fresh();
+        });
+
+        if (! $approvedRequest instanceof BloodRequest) {
+            return redirect()
+                ->route('verifications.show', $bloodRequest)
+                ->with($abortLevel, $abortReason ?? 'Permohonan tidak dapat diproses saat ini.');
+        }
+
+        return redirect()
+            ->route('verifications.show', $approvedRequest)
+            ->with(
+                'success',
+                "Permohonan {$approvedRequest->request_code} ({$approvedRequest->patient_name}) resmi disetujui dan dipublikasikan ke komunitas pendonor hingga {$expiresAt->translatedFormat('d M Y, H:i')} WIB."
+            );
     }
 
     /**

@@ -3,6 +3,11 @@
 @section('title', 'Tinjauan Medis ' . $bloodRequest->request_code)
 
 @section('content')
+@php
+    $isPendingReview = $bloodRequest->isPendingVerification();
+    $canApproveCase = $isPendingReview && $bloodRequest->hasReferralLetter();
+@endphp
+
 <section class="py-4 py-lg-5">
     <div class="container">
         <!-- Top Wayfinding & Rapid Queue Navigation -->
@@ -30,6 +35,22 @@
             </div>
 
             <div class="d-flex flex-wrap align-items-center gap-2">
+                @if ($isPendingReview && Route::has('verifications.approve'))
+                    <button
+                        type="button"
+                        class="btn btn-dc-primary"
+                        @if ($canApproveCase)
+                            data-dc-open-sheet="approveRequestSheet"
+                        @else
+                            disabled
+                            title="Berkas surat rujukan dokter belum dilampirkan oleh pemohon"
+                        @endif
+                    >
+                        <i class="bi bi-check2-circle"></i>
+                        Setujui &amp; Publikasikan
+                    </button>
+                @endif
+
                 @if ($nextPendingRequest)
                     <a href="{{ route('verifications.show', $nextPendingRequest) }}" class="btn btn-dc-soft" title="Lanjut ke {{ $nextPendingRequest->patient_name }}">
                         <i class="bi bi-skip-forward-fill"></i>
@@ -43,6 +64,19 @@
                 </a>
             </div>
         </div>
+
+        @if ($errors->any())
+            <div class="dc-card p-3 mb-4 border-danger-subtle bg-danger-subtle text-danger-emphasis" role="alert">
+                <div class="fw-semibold small mb-1">
+                    <i class="bi bi-exclamation-circle-fill me-1"></i>Validasi pengesahan verifikasi memerlukan perbaikan:
+                </div>
+                <ul class="mb-0 ps-3 small">
+                    @foreach ($errors->all() as $error)
+                        <li>{{ $error }}</li>
+                    @endforeach
+                </ul>
+            </div>
+        @endif
 
         <!-- Clinical Triage Priority Banner -->
         @if ($isSevereAnemia || $bloodRequest->urgency_level->value === 'critical')
@@ -196,8 +230,8 @@
                     </div>
                 </div>
 
-                <!-- Clinical Inspection Checklist & Verification Status Panel -->
-                <div class="dc-card p-4">
+                <!-- Clinical Inspection Checklist & Verification Decision Panel -->
+                <div class="dc-card p-4 mb-4">
                     <div class="d-flex align-items-center justify-content-between gap-2 mb-3">
                         <div>
                             <div class="dc-eyebrow">SOP Pemeriksaan Berkas UDD</div>
@@ -217,42 +251,47 @@
                         @endphp
                         @foreach ($checkItems as $chkId => $chkLabel)
                             <label for="{{ $chkId }}" class="d-flex align-items-start gap-3 p-2 px-3 rounded-3 border bg-white dc-pressable" style="cursor: pointer;">
-                                <input type="checkbox" id="{{ $chkId }}" class="form-check-input mt-1 flex-shrink-0 js-sop-check">
+                                <input
+                                    type="checkbox"
+                                    id="{{ $chkId }}"
+                                    class="form-check-input mt-1 flex-shrink-0 js-sop-check"
+                                    @checked(! $isPendingReview && $bloodRequest->status === \App\Enums\BloodRequestStatus::ACTIVE)
+                                    @disabled(! $isPendingReview)
+                                >
                                 <span class="small text-dark">{{ $chkLabel }}</span>
                             </label>
                         @endforeach
                     </div>
 
-                    @if ($bloodRequest->verified_at)
-                        <div class="p-3 rounded-3 bg-success-subtle border border-success-subtle">
-                            <div class="fw-semibold text-success-emphasis small">
-                                <i class="bi bi-patch-check-fill me-1"></i>
-                                Telah Ditinjau oleh {{ $bloodRequest->verifier?->name ?? 'Petugas UDD' }}
-                            </div>
-                            <div class="dc-caption text-dark mt-1 dc-tabular">
-                                Waktu putusan: {{ $bloodRequest->verified_at->translatedFormat('d M Y, H:i') }} WIB
-                                @if ($bloodRequest->expires_at)
-                                    &middot; Aktif s.d. {{ $bloodRequest->expires_at->translatedFormat('d M Y, H:i') }} WIB
-                                @endif
-                            </div>
-                            @if ($bloodRequest->verification_notes)
-                                <p class="mb-0 small text-dark mt-2">Catatan resmi: "{{ $bloodRequest->verification_notes }}"</p>
-                            @endif
-                        </div>
-                    @else
+                    @if ($isPendingReview)
                         <div class="p-3 rounded-3 bg-light border d-flex flex-column gap-2">
                             <div class="d-flex align-items-center gap-2 small fw-semibold text-dark">
                                 <i class="bi bi-hourglass-split text-warning"></i>
                                 Status Saat Ini: {{ $bloodRequest->status->label() }}
                             </div>
                             <div class="dc-caption">
-                                Periksa kesesuaian data klinis di kiri dengan dokumen rujukan dokter pada panel pratinjau di sebelah kanan.
+                                Periksa kesesuaian data klinis di kiri dengan dokumen rujukan dokter pada panel pratinjau di sebelah kanan sebelum menetapkan masa aktif publikasi.
                             </div>
+
+                            @if (! $bloodRequest->hasReferralLetter())
+                                <div class="p-2 px-3 rounded-3 bg-warning-subtle text-warning-emphasis small fw-medium">
+                                    <i class="bi bi-exclamation-triangle-fill me-1"></i>
+                                    Berkas rujukan belum terlampir — permohonan belum dapat disetujui untuk publikasi publik.
+                                </div>
+                            @endif
 
                             @if (Route::has('verifications.approve') || Route::has('verifications.reject'))
                                 <div class="d-flex flex-wrap gap-2 mt-2">
                                     @if (Route::has('verifications.approve'))
-                                        <button type="button" class="btn btn-dc-primary btn-sm" data-dc-open-sheet="approveRequestSheet">
+                                        <button
+                                            type="button"
+                                            class="btn btn-dc-primary btn-sm"
+                                            @if ($canApproveCase)
+                                                data-dc-open-sheet="approveRequestSheet"
+                                            @else
+                                                disabled
+                                            @endif
+                                        >
                                             <i class="bi bi-check2-circle"></i>
                                             Setujui &amp; Publikasikan
                                         </button>
@@ -266,8 +305,104 @@
                                 </div>
                             @endif
                         </div>
+                    @else
+                        @php
+                            $boxClasses = match ($bloodRequest->status) {
+                                \App\Enums\BloodRequestStatus::ACTIVE, \App\Enums\BloodRequestStatus::FULFILLED => 'bg-success-subtle border-success-subtle text-success-emphasis',
+                                \App\Enums\BloodRequestStatus::NEED_REVISION => 'bg-warning-subtle border-warning-subtle text-warning-emphasis',
+                                \App\Enums\BloodRequestStatus::REJECTED, \App\Enums\BloodRequestStatus::CANCELLED => 'bg-danger-subtle border-danger-subtle text-danger-emphasis',
+                                default => 'bg-light border text-dark',
+                            };
+                        @endphp
+                        <div class="p-3 rounded-3 border {{ $boxClasses }}">
+                            <div class="fw-semibold small d-flex align-items-center justify-content-between gap-2">
+                                <span>
+                                    <i class="bi {{ $bloodRequest->status->icon() }} me-1"></i>
+                                    Putusan Terkini: {{ $bloodRequest->status->label() }}
+                                </span>
+                                @if ($bloodRequest->verifier)
+                                    <span class="dc-caption fw-medium text-dark">Oleh {{ $bloodRequest->verifier->name }}</span>
+                                @endif
+                            </div>
+
+                            @if ($bloodRequest->verified_at || $bloodRequest->expires_at)
+                                <div class="dc-caption text-dark mt-1 dc-tabular">
+                                    @if ($bloodRequest->verified_at)
+                                        Waktu putusan: <strong>{{ $bloodRequest->verified_at->translatedFormat('d M Y, H:i') }} WIB</strong>
+                                    @endif
+                                    @if ($bloodRequest->expires_at)
+                                        &middot; Masa aktif publikasi s.d. <strong>{{ $bloodRequest->expires_at->translatedFormat('d M Y, H:i') }} WIB</strong>
+                                    @endif
+                                </div>
+                            @endif
+
+                            @if ($bloodRequest->verification_notes)
+                                <p class="mb-0 small text-dark mt-2">
+                                    <strong>Catatan Resmi UDD:</strong> "{{ $bloodRequest->verification_notes }}"
+                                </p>
+                            @endif
+                        </div>
                     @endif
                 </div>
+
+                <!-- Official Medical Verification Audit Trail -->
+                @if ($verificationLogs->isNotEmpty() || $bloodRequest->verified_at)
+                    <div class="dc-card p-4">
+                        <div class="d-flex align-items-center justify-content-between gap-2 mb-3">
+                            <div>
+                                <div class="dc-eyebrow">Rekam Jejak Otorisasi</div>
+                                <h2 class="dc-title-3 mb-0 mt-1">Riwayat Verifikasi Petugas UDD</h2>
+                            </div>
+                            <i class="bi bi-journal-medical text-danger fs-4"></i>
+                        </div>
+
+                        <div class="vstack gap-3">
+                            @forelse ($verificationLogs as $log)
+                                <div class="p-3 rounded-3 bg-light border">
+                                    <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-1">
+                                        <span class="dc-pill {{ $log->decision->pillClass() }}">
+                                            <i class="bi {{ $log->decision->icon() }}"></i>
+                                            {{ $log->decision->label() }}
+                                        </span>
+                                        <span class="dc-caption dc-tabular">
+                                            {{ $log->decided_at->translatedFormat('d M Y, H:i') }} WIB
+                                        </span>
+                                    </div>
+                                    <div class="dc-caption text-dark mt-1">
+                                        Verifikator: <strong>{{ $log->reviewer?->name ?? 'Petugas UDD' }}</strong>
+                                        @if ($log->expires_at)
+                                            &middot; Masa aktif s.d. <strong class="dc-tabular">{{ $log->expires_at->translatedFormat('d M Y, H:i') }} WIB</strong>
+                                        @endif
+                                    </div>
+                                    @if ($log->notes)
+                                        <div class="small text-secondary mt-2">"{{ $log->notes }}"</div>
+                                    @endif
+                                </div>
+                            @empty
+                                <div class="p-3 rounded-3 bg-light border">
+                                    <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-1">
+                                        <span class="dc-pill {{ $bloodRequest->status->pillClass() }}">
+                                            <i class="bi {{ $bloodRequest->status->icon() }}"></i>
+                                            {{ $bloodRequest->status->label() }}
+                                        </span>
+                                        <span class="dc-caption dc-tabular">
+                                            {{ $bloodRequest->verified_at->translatedFormat('d M Y, H:i') }} WIB
+                                        </span>
+                                    </div>
+                                    <div class="dc-caption text-dark mt-1">
+                                        Verifikator: <strong>{{ $bloodRequest->verifier?->name ?? 'Petugas UDD' }}</strong>
+                                        @if ($bloodRequest->expires_at)
+                                            &middot; Masa aktif s.d. <strong class="dc-tabular">{{ $bloodRequest->expires_at->translatedFormat('d M Y, H:i') }} WIB</strong>
+                                        @endif
+                                    </div>
+                                    @if ($bloodRequest->verification_notes)
+                                        <div class="small text-secondary mt-2">"{{ $bloodRequest->verification_notes }}"</div>
+                                    @endif
+                                </div>
+                            @endforelse
+                        </div>
+                    </div>
+                @endif
             </div>
 
             <!-- Right Column: Sticky Medical Referral Document Viewer -->
@@ -355,6 +490,115 @@
         </div>
     </div>
 </section>
+
+@if ($canApproveCase && Route::has('verifications.approve'))
+    <!-- Fluid Bottom Sheet: Medical Approval & Publication Window (§1, §2, §5, §12) -->
+    <div class="dc-sheet-backdrop" data-dc-sheet-backdrop="approveRequestSheet"></div>
+    <aside
+        class="dc-sheet-panel"
+        style="max-width: 38rem;"
+        data-dc-sheet="approveRequestSheet"
+        aria-hidden="true"
+        aria-labelledby="approveRequestSheetTitle"
+    >
+        <div class="dc-sheet-handle-area" title="Tarik ke bawah untuk menutup">
+            <span class="dc-sheet-handle"></span>
+        </div>
+
+        <form action="{{ route('verifications.approve', $bloodRequest) }}" method="POST" class="px-4 pb-4" novalidate>
+            @csrf
+
+            <div class="d-flex align-items-start justify-content-between gap-3 pb-3 mb-3 border-bottom">
+                <div>
+                    <div class="dc-eyebrow text-success">Otorisasi Publikasi Medis UDD</div>
+                    <h2 id="approveRequestSheetTitle" class="dc-title-2 mb-1 mt-1">Setujui &amp; Aktifkan Permohonan</h2>
+                    <div class="dc-caption">
+                        Kasus <strong class="dc-tabular text-dark">{{ $bloodRequest->request_code }}</strong> &middot;
+                        <strong class="text-dark">{{ $bloodRequest->patient_name }}</strong>
+                        ({{ $bloodRequest->bags_needed }} Kantong {{ $bloodRequest->component_type->value }} Gol. {{ $bloodRequest->blood_group_label }})
+                    </div>
+                </div>
+                <button type="button" class="btn btn-dc-soft btn-sm flex-shrink-0" data-dc-close-sheet="approveRequestSheet" aria-label="Tutup panel persetujuan">
+                    <i class="bi bi-x-lg"></i>
+                </button>
+            </div>
+
+            <!-- Preset Duration Chips -->
+            <div class="mb-3">
+                <label class="form-label mb-1">Pilih Cepat Durasi Publikasi Aktif</label>
+                <div class="d-flex flex-wrap gap-2">
+                    @foreach ([24 => '+24 Jam', 48 => '+48 Jam (Standar Darurat)', 72 => '+72 Jam (3 Hari)', 168 => '+7 Hari'] as $hours => $presetLabel)
+                        <button
+                            type="button"
+                            class="btn btn-dc-secondary btn-sm dc-pressable js-expiry-preset"
+                            data-hours="{{ $hours }}"
+                        >
+                            {{ $presetLabel }}
+                        </button>
+                    @endforeach
+                </div>
+            </div>
+
+            <div class="mb-3">
+                <label for="approveExpiresAt" class="form-label">
+                    Batas Waktu Masa Aktif Publikasi <span class="text-danger">*</span>
+                </label>
+                <input
+                    type="datetime-local"
+                    id="approveExpiresAt"
+                    name="expires_at"
+                    value="{{ old('expires_at', $defaultExpiresAt) }}"
+                    min="{{ now()->addMinutes(5)->format('Y-m-d\TH:i') }}"
+                    max="{{ now()->addDays(14)->endOfDay()->format('Y-m-d\TH:i') }}"
+                    class="form-control dc-tabular @error('expires_at') is-invalid @enderror"
+                    required
+                >
+                @error('expires_at')
+                    <div class="invalid-feedback">{{ $message }}</div>
+                @else
+                    <div class="dc-caption mt-1" id="expiryDurationPreview">
+                        Permohonan akan otomatis berhenti tayang di katalog pendonor setelah melewati waktu ini.
+                    </div>
+                @enderror
+            </div>
+
+            <div class="mb-3">
+                <label for="approveVerificationNotes" class="form-label">
+                    Catatan Pengesahan Medis UDD <span class="text-muted fw-normal">(Opsional)</span>
+                </label>
+                <textarea
+                    id="approveVerificationNotes"
+                    name="verification_notes"
+                    rows="3"
+                    maxlength="1000"
+                    class="form-control @error('verification_notes') is-invalid @enderror"
+                    placeholder="Contoh: Surat rujukan DPJP dan indikasi Hb tervalidasi. Pendonor diarahkan ke loket BDRS / UDD rujukan."
+                >{{ old('verification_notes') }}</textarea>
+                @error('verification_notes')
+                    <div class="invalid-feedback">{{ $message }}</div>
+                @enderror
+            </div>
+
+            <div class="p-3 rounded-3 bg-light border mb-4 d-flex align-items-center justify-content-between gap-2 small">
+                <span class="text-secondary">
+                    <i class="bi bi-clipboard2-check text-danger me-1"></i>
+                    Status Daftar Periksa SOP:
+                </span>
+                <strong class="dc-tabular text-dark" id="sheetChecklistMirror">0 / 4 butir dicentang</strong>
+            </div>
+
+            <div class="d-flex flex-column flex-sm-row justify-content-end gap-2">
+                <button type="button" class="btn btn-dc-secondary" data-dc-close-sheet="approveRequestSheet">
+                    Batal
+                </button>
+                <button type="submit" class="btn btn-dc-primary px-4">
+                    <i class="bi bi-broadcast-pin"></i>
+                    Setujui &amp; Publikasikan ke Pendonor
+                </button>
+            </div>
+        </form>
+    </aside>
+@endif
 @endsection
 
 @push('scripts')
@@ -362,17 +606,74 @@
 document.addEventListener('DOMContentLoaded', () => {
     const checks = Array.from(document.querySelectorAll('.js-sop-check'));
     const badge = document.getElementById('checklistBadge');
-    if (!checks.length || !badge) return;
+    const sheetMirror = document.getElementById('sheetChecklistMirror');
 
     const updateChecklist = () => {
+        if (!checks.length) return;
         const done = checks.filter((c) => c.checked).length;
-        badge.textContent = `${done} / ${checks.length} Diperiksa`;
-        badge.className = 'dc-pill dc-tabular ' + (
-            done === checks.length ? 'dc-pill-success' : (done > 0 ? 'dc-pill-warning' : 'dc-pill-neutral')
-        );
+        if (badge) {
+            badge.textContent = `${done} / ${checks.length} Diperiksa`;
+            badge.className = 'dc-pill dc-tabular ' + (
+                done === checks.length ? 'dc-pill-success' : (done > 0 ? 'dc-pill-warning' : 'dc-pill-neutral')
+            );
+        }
+        if (sheetMirror) {
+            sheetMirror.textContent = `${done} / ${checks.length} butir dicentang`;
+        }
     };
 
     checks.forEach((c) => c.addEventListener('change', updateChecklist));
+    updateChecklist();
+
+    const expiresInput = document.getElementById('approveExpiresAt');
+    const durationPreview = document.getElementById('expiryDurationPreview');
+
+    const toLocalInputString = (dateObj) => {
+        const pad = (n) => String(n).padStart(2, '0');
+        return `${dateObj.getFullYear()}-${pad(dateObj.getMonth() + 1)}-${pad(dateObj.getDate())}T${pad(dateObj.getHours())}:${pad(dateObj.getMinutes())}`;
+    };
+
+    const refreshDurationHint = () => {
+        if (!expiresInput || !durationPreview || !expiresInput.value) return;
+        const target = new Date(expiresInput.value);
+        const diffMs = target.getTime() - Date.now();
+        if (Number.isNaN(diffMs)) return;
+
+        if (diffMs <= 0) {
+            durationPreview.textContent = 'Waktu yang dipilih sudah lewat — pilih waktu di masa mendatang.';
+            durationPreview.className = 'dc-caption mt-1 text-danger fw-semibold';
+            return;
+        }
+
+        const totalHours = Math.round(diffMs / 3600000);
+        const label = totalHours >= 48
+            ? `sekitar ${(totalHours / 24).toFixed(1)} hari (${totalHours} jam)`
+            : `sekitar ${Math.max(1, totalHours)} jam`;
+
+        durationPreview.textContent = `Publikasi darurat akan tayang aktif selama ${label} ke depan.`;
+        durationPreview.className = 'dc-caption mt-1 text-success-emphasis fw-medium';
+    };
+
+    document.querySelectorAll('.js-expiry-preset').forEach((btn) => {
+        btn.addEventListener('click', () => {
+            const hours = parseInt(btn.dataset.hours || '48', 10);
+            if (!expiresInput || Number.isNaN(hours)) return;
+            const target = new Date(Date.now() + hours * 3600000);
+            target.setSeconds(0, 0);
+            expiresInput.value = toLocalInputString(target);
+            refreshDurationHint();
+        });
+    });
+
+    expiresInput?.addEventListener('input', refreshDurationHint);
+    expiresInput?.addEventListener('change', refreshDurationHint);
+    refreshDurationHint();
+
+    @if ($errors->has('expires_at') || $errors->has('verification_notes'))
+        window.requestAnimationFrame(() => {
+            window.DarahSheets?.get('approveRequestSheet')?.open();
+        });
+    @endif
 });
 </script>
 @endpush
