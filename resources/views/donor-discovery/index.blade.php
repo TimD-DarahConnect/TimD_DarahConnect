@@ -44,6 +44,29 @@
 @endpush
 
 @section('content')
+@php
+    $persistedFilterParams = array_filter([
+        'match_mode' => $matchMode !== 'compatible' ? $matchMode : null,
+        'blood_type' => $bloodTypeFilter ?: null,
+        'rhesus' => $rhesusFilter ?: null,
+        'component' => $componentFilter ?: null,
+        'region_id' => $regionIdFilter,
+        'q' => $searchQuery ?: null,
+        'lat' => $origin['source'] === 'gps' ? $origin['latitude'] : null,
+        'lng' => $origin['source'] === 'gps' ? $origin['longitude'] : null,
+    ], fn ($value) => $value !== null && $value !== '');
+
+    $authDonor = auth()->check() && auth()->user()->isDonor() ? auth()->user() : null;
+    $donorHasBloodProfile = $authDonor !== null && $authDonor->blood_type !== null && $authDonor->rhesus !== null;
+    $isMyBloodFilterActive = $donorHasBloodProfile
+        && $matchMode === 'compatible'
+        && $bloodTypeFilter === $authDonor->blood_type->value
+        && $rhesusFilter === $authDonor->rhesus->value;
+    $isMyRegionFilterActive = $authDonor !== null
+        && $authDonor->region_id !== null
+        && (int) $regionIdFilter === (int) $authDonor->region_id;
+@endphp
+
 <section class="py-4 py-lg-5">
     <div class="container">
         <!-- Header & Geospatial Reference Controls -->
@@ -58,7 +81,7 @@
                 </div>
                 <h1 class="dc-title-1 mb-1">Kebutuhan Darah Aktif Terverifikasi</h1>
                 <p class="dc-caption mb-0">
-                    Seluruh permohonan telah melalui validasi medis UDD PMI dan diurutkan berdasarkan urgensi klinis serta jarak ke rumah sakit rujukan.
+                    Saring permohonan berdasarkan aturan medis kompatibilitas transfusi ABO/Rhesus per komponen darah, wilayah rumah sakit, serta kedekatan jarak.
                 </p>
             </div>
 
@@ -70,7 +93,11 @@
 
                 @if ($origin['source'] === 'gps')
                     <a
-                        href="{{ route('discovery.index', array_filter(['sort' => $sortBy !== 'urgency_nearest' ? $sortBy : null, 'q' => $searchQuery ?: null])) }}"
+                        href="{{ route('discovery.index', array_filter(array_merge($persistedFilterParams, [
+                            'sort' => $sortBy !== 'urgency_nearest' ? $sortBy : null,
+                            'lat' => null,
+                            'lng' => null,
+                        ]))) }}"
                         class="btn btn-dc-soft btn-sm"
                     >
                         <i class="bi bi-arrow-counterclockwise"></i>
@@ -86,7 +113,7 @@
         <div class="row g-3 mb-4">
             <div class="col-6 col-lg-3">
                 <div class="dc-card p-3 h-100">
-                    <div class="dc-caption">Kasus Aktif Terbuka</div>
+                    <div class="dc-caption">Kasus Aktif Sesuai Filter</div>
                     <div class="dc-title-2 dc-tabular mb-0 mt-1">{{ $summary['active_cases'] }}</div>
                 </div>
             </div>
@@ -110,74 +137,230 @@
             </div>
         </div>
 
-        <!-- Translucent Sort & Search Bar (§12 Materials) -->
-        <div class="dc-glass-bar p-3 mb-4">
-            <div class="d-flex flex-column flex-xl-row align-items-xl-center justify-content-between gap-3">
-                <div class="d-flex flex-wrap align-items-center gap-1" role="navigation" aria-label="Urutkan permohonan">
-                    @php
-                        $sortOptions = [
-                            'urgency_nearest' => ['label' => 'Urgensi & Terdekat', 'icon' => 'bi-stars'],
-                            'nearest' => ['label' => 'Jarak Terdekat', 'icon' => 'bi-signpost-split'],
-                            'urgency' => ['label' => 'Prioritas Klinis', 'icon' => 'bi-heart-pulse'],
-                            'deadline' => ['label' => 'Tenggat Terdekat', 'icon' => 'bi-alarm'],
-                        ];
-                    @endphp
-                    @foreach ($sortOptions as $sortKey => $sortMeta)
-                        <a
-                            href="{{ route('discovery.index', array_filter([
-                                'sort' => $sortKey === 'urgency_nearest' ? null : $sortKey,
-                                'q' => $searchQuery ?: null,
-                                'lat' => $origin['source'] === 'gps' ? $origin['latitude'] : null,
-                                'lng' => $origin['source'] === 'gps' ? $origin['longitude'] : null,
-                            ])) }}"
-                            class="dc-nav-pill {{ $sortBy === $sortKey ? 'active' : '' }} d-inline-flex align-items-center gap-2"
-                        >
-                            <i class="bi {{ $sortMeta['icon'] }}"></i>
-                            <span>{{ $sortMeta['label'] }}</span>
-                        </a>
-                    @endforeach
-                </div>
-
-                <form method="GET" action="{{ route('discovery.index') }}" class="d-flex flex-wrap flex-sm-nowrap gap-2">
-                    @if ($sortBy !== 'urgency_nearest')
-                        <input type="hidden" name="sort" value="{{ $sortBy }}">
-                    @endif
-                    @if ($origin['source'] === 'gps')
-                        <input type="hidden" name="lat" value="{{ $origin['latitude'] }}">
-                        <input type="hidden" name="lng" value="{{ $origin['longitude'] }}">
-                    @endif
-
-                    <div class="input-group input-group-sm" style="min-width: 16rem;">
-                        <span class="input-group-text bg-white border-end-0 text-secondary">
-                            <i class="bi bi-search"></i>
+        <!-- Multi-Parameter Clinical Compatibility, Component & Region Filter Panel (§12 Materials) -->
+        <div class="dc-glass-bar p-3 p-lg-4 mb-4">
+            @if ($authDonor && ($donorHasBloodProfile || $authDonor->region))
+                <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 pb-3 mb-3 border-bottom">
+                    <div class="d-flex flex-wrap align-items-center gap-2">
+                        <span class="dc-caption fw-semibold text-dark">
+                            <i class="bi bi-person-heart text-danger me-1"></i>Filter Cepat Profil Anda:
                         </span>
-                        <input
-                            type="search"
-                            name="q"
-                            value="{{ $searchQuery }}"
-                            class="form-control form-control-sm border-start-0 ps-0"
-                            placeholder="Cari rumah sakit, kota, komponen..."
-                            aria-label="Cari permohonan darah aktif"
-                        >
+
+                        @if ($donorHasBloodProfile)
+                            @php
+                                $myBloodParams = $isMyBloodFilterActive
+                                    ? array_merge($persistedFilterParams, ['blood_type' => null, 'rhesus' => null, 'match_mode' => null])
+                                    : array_merge($persistedFilterParams, [
+                                        'match_mode' => null,
+                                        'blood_type' => $authDonor->blood_type->value,
+                                        'rhesus' => $authDonor->rhesus->value,
+                                    ]);
+                                if ($sortBy !== 'urgency_nearest') {
+                                    $myBloodParams['sort'] = $sortBy;
+                                }
+                            @endphp
+                            <a
+                                href="{{ route('discovery.index', array_filter($myBloodParams, fn ($v) => $v !== null && $v !== '')) }}"
+                                class="btn {{ $isMyBloodFilterActive ? 'btn-dc-primary' : 'btn-dc-secondary' }} btn-sm dc-pressable"
+                            >
+                                <i class="bi bi-droplet-fill"></i>
+                                Kompatibel Darah Saya ({{ $authDonor->blood_group_label }})
+                            </a>
+                        @endif
+
+                        @if ($authDonor->region)
+                            @php
+                                $myRegionParams = $isMyRegionFilterActive
+                                    ? array_merge($persistedFilterParams, ['region_id' => null])
+                                    : array_merge($persistedFilterParams, ['region_id' => $authDonor->region_id]);
+                                if ($sortBy !== 'urgency_nearest') {
+                                    $myRegionParams['sort'] = $sortBy;
+                                }
+                            @endphp
+                            <a
+                                href="{{ route('discovery.index', array_filter($myRegionParams, fn ($v) => $v !== null && $v !== '')) }}"
+                                class="btn {{ $isMyRegionFilterActive ? 'btn-dc-primary' : 'btn-dc-secondary' }} btn-sm dc-pressable"
+                            >
+                                <i class="bi bi-geo-fill"></i>
+                                Domisili Saya ({{ $authDonor->region->name }})
+                            </a>
+                        @endif
                     </div>
 
-                    <button type="submit" class="btn btn-dc-primary btn-sm">Cari</button>
-
-                    @if ($searchQuery !== '')
+                    @if ($hasActiveFilters)
                         <a
                             href="{{ route('discovery.index', array_filter([
-                                'sort' => $sortBy === 'urgency_nearest' ? null : $sortBy,
+                                'sort' => $sortBy !== 'urgency_nearest' ? $sortBy : null,
                                 'lat' => $origin['source'] === 'gps' ? $origin['latitude'] : null,
                                 'lng' => $origin['source'] === 'gps' ? $origin['longitude'] : null,
                             ])) }}"
-                            class="btn btn-dc-secondary btn-sm"
-                            title="Hapus kata kunci"
+                            class="btn btn-dc-soft btn-sm"
                         >
-                            <i class="bi bi-x-lg"></i>
+                            <i class="bi bi-x-circle"></i>
+                            Reset Semua Filter
                         </a>
                     @endif
-                </form>
-            </div>
+                </div>
+            @endif
+
+            <form method="GET" action="{{ route('discovery.index') }}" id="discoveryFilterForm">
+                @if ($sortBy !== 'urgency_nearest')
+                    <input type="hidden" name="sort" value="{{ $sortBy }}">
+                @endif
+                @if ($origin['source'] === 'gps')
+                    <input type="hidden" name="lat" value="{{ $origin['latitude'] }}">
+                    <input type="hidden" name="lng" value="{{ $origin['longitude'] }}">
+                @endif
+
+                <div class="row g-2 g-lg-3 align-items-end">
+                    <div class="col-12 col-md-4 col-xl-3">
+                        <label for="filterMatchMode" class="form-label small mb-1">Metode Pencocokan Golongan</label>
+                        <select id="filterMatchMode" name="match_mode" class="form-select form-select-sm js-auto-filter">
+                            <option value="compatible" @selected($matchMode === 'compatible')>
+                                Kompatibel Transfusi (Gol. Pendonor)
+                            </option>
+                            <option value="exact" @selected($matchMode === 'exact')>
+                                Golongan Pasien Spesifik (Identik)
+                            </option>
+                        </select>
+                    </div>
+
+                    <div class="col-6 col-md-2 col-xl-2">
+                        <label for="filterBloodType" class="form-label small mb-1" id="bloodTypeFilterLabel">
+                            {{ $matchMode === 'compatible' ? 'ABO Pendonor' : 'ABO Pasien' }}
+                        </label>
+                        <select id="filterBloodType" name="blood_type" class="form-select form-select-sm js-auto-filter">
+                            <option value="">Semua ABO</option>
+                            @foreach ($bloodTypes as $bt)
+                                <option value="{{ $bt->value }}" @selected($bloodTypeFilter === $bt->value)>
+                                    Golongan {{ $bt->value }}
+                                </option>
+                            @endforeach
+                        </select>
+                    </div>
+
+                    <div class="col-6 col-md-2 col-xl-2">
+                        <label for="filterRhesus" class="form-label small mb-1">Faktor Rhesus</label>
+                        <select id="filterRhesus" name="rhesus" class="form-select form-select-sm js-auto-filter">
+                            <option value="">Semua Rh</option>
+                            @foreach ($rhesusOptions as $rh)
+                                <option value="{{ $rh->value }}" @selected($rhesusFilter === $rh->value)>
+                                    Rhesus ({{ $rh->value }})
+                                </option>
+                            @endforeach
+                        </select>
+                    </div>
+
+                    <div class="col-12 col-sm-6 col-md-4 col-xl-2">
+                        <label for="filterComponent" class="form-label small mb-1">Komponen Darah</label>
+                        <select id="filterComponent" name="component" class="form-select form-select-sm js-auto-filter">
+                            <option value="">Semua Komponen</option>
+                            @foreach ($componentOptions as $comp)
+                                <option value="{{ $comp->value }}" @selected($componentFilter === $comp->value)>
+                                    {{ $comp->value }} — {{ $comp->label() }}
+                                </option>
+                            @endforeach
+                        </select>
+                    </div>
+
+                    <div class="col-12 col-sm-6 col-md-6 col-xl-3">
+                        <label for="filterRegion" class="form-label small mb-1">Wilayah Kabupaten / Kota</label>
+                        <select id="filterRegion" name="region_id" class="form-select form-select-sm js-auto-filter">
+                            <option value="">Seluruh Wilayah Faskes</option>
+                            @foreach ($regionsByProvince as $provinceName => $provinceRegions)
+                                <optgroup label="{{ $provinceName }}">
+                                    @foreach ($provinceRegions as $reg)
+                                        <option value="{{ $reg->id }}" @selected((int) $regionIdFilter === (int) $reg->id)>
+                                            {{ $reg->name }}
+                                        </option>
+                                    @endforeach
+                                </optgroup>
+                            @endforeach
+                        </select>
+                    </div>
+
+                    <div class="col-12 col-md-6 col-xl-6">
+                        <label for="filterSearchQuery" class="form-label small mb-1">Pencarian Kata Kunci</label>
+                        <div class="input-group input-group-sm">
+                            <span class="input-group-text bg-white border-end-0 text-secondary">
+                                <i class="bi bi-search"></i>
+                            </span>
+                            <input
+                                type="search"
+                                id="filterSearchQuery"
+                                name="q"
+                                value="{{ $searchQuery }}"
+                                class="form-control form-control-sm border-start-0 ps-0"
+                                placeholder="Cari nama rumah sakit, kode permohonan, indikasi medis..."
+                            >
+                            <button type="submit" class="btn btn-dc-primary btn-sm px-3">
+                                Terapkan Filter
+                            </button>
+                            @if ($hasActiveFilters && ! ($authDonor && ($donorHasBloodProfile || $authDonor->region)))
+                                <a
+                                    href="{{ route('discovery.index', array_filter([
+                                        'sort' => $sortBy !== 'urgency_nearest' ? $sortBy : null,
+                                        'lat' => $origin['source'] === 'gps' ? $origin['latitude'] : null,
+                                        'lng' => $origin['source'] === 'gps' ? $origin['longitude'] : null,
+                                    ])) }}"
+                                    class="btn btn-dc-secondary btn-sm"
+                                    title="Reset semua filter"
+                                >
+                                    Reset
+                                </a>
+                            @endif
+                        </div>
+                    </div>
+
+                    <div class="col-12 col-xl-6">
+                        <div class="d-flex flex-wrap align-items-center justify-content-xl-end gap-1" role="navigation" aria-label="Urutkan permohonan">
+                            @php
+                                $sortOptions = [
+                                    'urgency_nearest' => ['label' => 'Urgensi & Terdekat', 'icon' => 'bi-stars'],
+                                    'nearest' => ['label' => 'Jarak Terdekat', 'icon' => 'bi-signpost-split'],
+                                    'urgency' => ['label' => 'Prioritas Klinis', 'icon' => 'bi-heart-pulse'],
+                                    'deadline' => ['label' => 'Tenggat Terdekat', 'icon' => 'bi-alarm'],
+                                ];
+                            @endphp
+                            @foreach ($sortOptions as $sortKey => $sortMeta)
+                                <a
+                                    href="{{ route('discovery.index', array_filter(array_merge($persistedFilterParams, [
+                                        'sort' => $sortKey === 'urgency_nearest' ? null : $sortKey,
+                                    ]), fn ($v) => $v !== null && $v !== '')) }}"
+                                    class="dc-nav-pill {{ $sortBy === $sortKey ? 'active' : '' }} d-inline-flex align-items-center gap-2"
+                                >
+                                    <i class="bi {{ $sortMeta['icon'] }}"></i>
+                                    <span>{{ $sortMeta['label'] }}</span>
+                                </a>
+                            @endforeach
+                        </div>
+                    </div>
+                </div>
+            </form>
+
+            @if ($compatibilityReachSummary)
+                <div class="mt-3 pt-3 border-top d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-2 small">
+                    <div>
+                        <i class="bi bi-shield-plus text-danger me-1"></i>
+                        <strong class="text-dark">Matriks Kompatibilitas Transfusi Aktif
+                            ({{ ($bloodTypeFilter ?: 'Semua ABO').($rhesusFilter ?: '') }}):</strong>
+                        <span class="text-secondary dc-tabular">{{ $compatibilityReachSummary }}</span>
+                    </div>
+                    @if ($selectedRegion)
+                        <span class="dc-pill dc-pill-neutral flex-shrink-0">
+                            <i class="bi bi-building text-danger"></i>
+                            {{ $selectedRegion->full_label }}
+                        </span>
+                    @endif
+                </div>
+            @elseif ($selectedRegion)
+                <div class="mt-3 pt-3 border-top d-flex align-items-center gap-2 small">
+                    <span class="dc-pill dc-pill-neutral">
+                        <i class="bi bi-building text-danger"></i>
+                        Wilayah Faskes: {{ $selectedRegion->full_label }}
+                    </span>
+                </div>
+            @endif
         </div>
 
         <!-- Split View: Left Active Request Directory | Right Interactive Leaflet Geospatial Map -->
@@ -192,6 +375,7 @@
                                 'lat' => $origin['source'] === 'gps' ? $origin['latitude'] : null,
                                 'lng' => $origin['source'] === 'gps' ? $origin['longitude'] : null,
                             ]));
+                            $compatMeta = $item->getAttribute('compatibility_meta');
                         @endphp
                         <article
                             class="dc-card p-4 {{ $item->urgency_level->value === 'critical' ? 'border-danger border-opacity-25' : '' }}"
@@ -210,6 +394,12 @@
                                             &middot; &plusmn;{{ $item->getAttribute('estimated_minutes') }} mnt
                                         @endif
                                     </span>
+                                    @if (is_array($compatMeta) && ($compatMeta['tier'] ?? 'unknown') !== 'unknown')
+                                        <span class="dc-pill {{ $compatMeta['pill_class'] }} dc-tabular" title="{{ $compatMeta['explanation'] }}">
+                                            <i class="bi {{ $compatMeta['compatible'] ? 'bi-check2-circle' : 'bi-slash-circle' }}"></i>
+                                            {{ $compatMeta['badge_label'] }}
+                                        </span>
+                                    @endif
                                 </div>
 
                                 <span class="dc-caption dc-tabular fw-semibold">{{ $item->request_code }}</span>
@@ -296,14 +486,23 @@
                     @empty
                         <div class="dc-card p-5 text-center">
                             <div class="mx-auto mb-3 d-inline-flex align-items-center justify-content-center rounded-circle bg-light text-secondary" style="width: 3.5rem; height: 3.5rem;">
-                                <i class="bi bi-compass fs-4"></i>
+                                <i class="bi bi-funnel fs-4"></i>
                             </div>
-                            <h2 class="dc-title-3 mb-1">Belum Ada Permohonan Aktif yang Sesuai</h2>
-                            <p class="dc-caption mb-3 mx-auto" style="max-width: 28rem;">
-                                Saat ini tidak ditemukan permohonan darah aktif dengan kata kunci tersebut, atau seluruh kebutuhan darurat sedang terpenuhi.
+                            <h2 class="dc-title-3 mb-1">Tidak Ada Permohonan Aktif yang Cocok</h2>
+                            <p class="dc-caption mb-3 mx-auto" style="max-width: 30rem;">
+                                Saat ini belum ditemukan permohonan darah aktif yang memenuhi kombinasi kompatibilitas golongan, jenis komponen, atau wilayah yang Anda pilih.
                             </p>
-                            @if ($searchQuery !== '')
-                                <a href="{{ route('discovery.index') }}" class="btn btn-dc-secondary btn-sm">Tampilkan Semua Permohonan Aktif</a>
+                            @if ($hasActiveFilters)
+                                <a
+                                    href="{{ route('discovery.index', array_filter([
+                                        'sort' => $sortBy !== 'urgency_nearest' ? $sortBy : null,
+                                        'lat' => $origin['source'] === 'gps' ? $origin['latitude'] : null,
+                                        'lng' => $origin['source'] === 'gps' ? $origin['longitude'] : null,
+                                    ])) }}"
+                                    class="btn btn-dc-secondary btn-sm"
+                                >
+                                    Reset Filter &amp; Tampilkan Semua Kasus Aktif
+                                </a>
                             @endif
                         </div>
                     @endforelse
@@ -351,6 +550,13 @@
 ></script>
 <script>
 document.addEventListener('DOMContentLoaded', () => {
+    const filterForm = document.getElementById('discoveryFilterForm');
+    document.querySelectorAll('.js-auto-filter').forEach((selectEl) => {
+        selectEl.addEventListener('change', () => {
+            filterForm?.submit();
+        });
+    });
+
     const origin = @json($origin);
     const markersData = @json($mapMarkers);
     const reducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -366,7 +572,6 @@ document.addEventListener('DOMContentLoaded', () => {
             attribution: '&copy; OpenStreetMap contributors',
         }).addTo(map);
 
-        // Origin marker & 5 km proximity ring
         const originIcon = L.divIcon({
             className: 'bg-transparent border-0',
             html: '<div class="dc-map-pin-origin" title="Titik Acuan Anda"></div>',
