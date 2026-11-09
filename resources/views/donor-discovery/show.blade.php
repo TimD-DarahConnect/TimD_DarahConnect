@@ -207,6 +207,20 @@
                         Pastikan Anda memenuhi kriteria dasar kesehatan sebelum merespons kebutuhan transfusi pasien di rumah sakit atau UDD terkait.
                     </p>
 
+                    @if (is_array($compatibilityMeta ?? null))
+                        <div class="p-3 rounded-3 border bg-light mb-3">
+                            <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-1">
+                                <span class="dc-eyebrow">Analisis Kecocokan Biologis</span>
+                                <span class="dc-pill {{ $compatibilityMeta['pill_class'] }} dc-tabular">
+                                    {{ $compatibilityMeta['badge_label'] }}
+                                </span>
+                            </div>
+                            <div class="dc-caption text-dark mt-1">
+                                {{ $compatibilityMeta['explanation'] }}
+                            </div>
+                        </div>
+                    @endif
+
                     <div class="vstack gap-2 mb-4">
                         <div class="d-flex align-items-center gap-2 small">
                             <i class="bi bi-check-circle-fill text-success"></i>
