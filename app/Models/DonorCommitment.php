@@ -94,6 +94,19 @@ class DonorCommitment extends Model
             && $this->status->isActiveCommitment();
     }
 
+    public function canConfirmArrival(): bool
+    {
+        return $this->status === DonorCommitmentStatus::COMMITTED;
+    }
+
+    public function canBeCancelledByDonor(): bool
+    {
+        return in_array($this->status, [
+            DonorCommitmentStatus::COMMITTED,
+            DonorCommitmentStatus::ARRIVED,
+        ], true);
+    }
+
     public function getMaskedDonorAliasAttribute(): string
     {
         $name = trim((string) ($this->donor?->name ?? ''));

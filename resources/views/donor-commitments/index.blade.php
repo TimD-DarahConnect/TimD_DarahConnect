@@ -126,9 +126,17 @@
                                     @endif
 
                                     <div class="dc-caption dc-tabular">
-                                        <i class="bi bi-clock text-danger me-1"></i>
-                                        Estimasi Kehadiran: <strong class="text-dark">{{ $item->estimated_arrival_at->translatedFormat('d M Y, H:i') }} WIB</strong>
-                                        ({{ $item->estimated_arrival_at->diffForHumans() }})
+                                        @if ($item->status === \App\Enums\DonorCommitmentStatus::ARRIVED && $item->arrived_at)
+                                            <i class="bi bi-geo-alt-fill text-success me-1"></i>
+                                            Sudah tiba di faskes: <strong class="text-success">{{ $item->arrived_at->translatedFormat('d M Y, H:i') }} WIB</strong>
+                                        @elseif ($item->status === \App\Enums\DonorCommitmentStatus::CANCELLED && $item->cancelled_at)
+                                            <i class="bi bi-slash-circle text-danger me-1"></i>
+                                            Dibatalkan pada <strong class="text-dark">{{ $item->cancelled_at->translatedFormat('d M Y, H:i') }} WIB</strong>
+                                        @else
+                                            <i class="bi bi-clock text-danger me-1"></i>
+                                            Estimasi Kehadiran: <strong class="text-dark">{{ $item->estimated_arrival_at->translatedFormat('d M Y, H:i') }} WIB</strong>
+                                            ({{ $item->estimated_arrival_at->diffForHumans() }})
+                                        @endif
                                     </div>
                                 </div>
                             </div>
