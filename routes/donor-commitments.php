@@ -15,6 +15,14 @@ Route::middleware(['auth', 'role:pendonor'])
         Route::post('/', [DonorCommitmentController::class, 'store'])->name('commitments.store');
     });
 
+Route::middleware(['auth', 'role:pendonor'])
+    ->prefix('commitments/{commitment}')
+    ->whereNumber('commitment')
+    ->group(function () {
+        Route::patch('/arrive', [DonorCommitmentController::class, 'confirmArrival'])->name('commitments.arrive');
+        Route::patch('/cancel', [DonorCommitmentController::class, 'cancel'])->name('commitments.cancel');
+    });
+
 Route::middleware(['auth', 'role:pendonor,pencari_darah,petugas_udd,petugas_rs,admin'])
     ->get('/commitments/{commitment}', [DonorCommitmentController::class, 'show'])
     ->whereNumber('commitment')

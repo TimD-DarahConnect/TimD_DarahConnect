@@ -6,6 +6,7 @@ use App\Enums\BloodComponent;
 use App\Enums\BloodRequestStatus;
 use App\Enums\DonorCommitmentStatus;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\DonorCommitment\CancelDonorCommitmentRequest;
 use App\Http\Requests\DonorCommitment\StoreDonorCommitmentRequest;
 use App\Models\BloodRequest;
 use App\Models\DonorCommitment;
@@ -231,6 +232,123 @@ class DonorCommitmentController extends Controller
             'isOwnerSeeker' => $isOwnerSeeker,
             'activePledgesCount' => $activePledgesCount,
         ]);
+    }
+
+    /**
+     * Mark the volunteer donor commitment as arrived at the referring hospital / BDRS facility.
+     */
+    public function confirmArrival(Request $request, DonorCommitment $commitment): RedirectResponse
+    {
+        $user = $request->user();
+        if (! $user->isDonor() || (int) $commitment->donor_id !== (int) $user->id) {
+            abort(403, 'Anda hanya dapat mengonfirmasi kehadiran pada komitmen donor milik Anda sendiri.');
+        }
+
+        $outcome = 'updated';
+        $feedbackMessage = null;
+
+        DB::transaction(function () use ($commitment, &$outcome, &$feedbackMessage): void {
+            /** @var DonorCommitment $locked */
+            $locked = DonorCommitment::query()
+                ->whereKey($commitment->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            $parentRequest = BloodRequest::query()
+                ->whereKey($locked->blood_request_id)
+                ->lockForUpdate()
+                ->first();
+
+            if ($parentRequest && $parentRequest->status === BloodRequestStatus::CANCELLED) {
+                $outcome = 'warning';
+                $feedbackMessage = 'Permohonan darah terkait telah dibatalkan oleh pemohon sehingga konfirmasi kehadiran dihentikan.';
+
+                return;
+            }
+
+            if ($locked->status === DonorCommitmentStatus::ARRIVED) {
+                $outcome = 'already_arrived';
+                $feedbackMessage = "Kehadiran Anda di faskes untuk komitmen {$locked->pledge_code} sudah tercatat sebelumnya.";
+
+                return;
+            }
+
+            if (! $locked->canConfirmArrival()) {
+                $outcome = 'warning';
+                $feedbackMessage = "Status komitmen {$locked->pledge_code} saat ini adalah \"{$locked->status->label()}\" sehingga kehadiran tidak dapat dikonfirmasi.";
+
+                return;
+            }
+
+            $locked->update([
+                'status' => DonorCommitmentStatus::ARRIVED->value,
+                'arrived_at' => now(),
+            ]);
+        });
+
+        if ($outcome === 'already_arrived') {
+            return redirect()
+                ->route('commitments.show', $commitment)
+                ->with('status', $feedbackMessage);
+        }
+
+        if ($outcome !== 'updated') {
+            return redirect()
+                ->route('commitments.show', $commitment)
+                ->with('warning', $feedbackMessage ?? 'Konfirmasi kehadiran belum dapat diproses.');
+        }
+
+        return redirect()
+            ->route('commitments.show', $commitment)
+            ->with(
+                'success',
+                "Kehadiran Anda di fasilitas kesehatan telah dikonfirmasi! Silakan sebutkan token verifikasi {$commitment->coordination_code} di loket BDRS / UDD."
+            );
+    }
+
+    /**
+     * Cancel an active donor commitment with a mandatory valid emergency reason, reopening capacity for other donors.
+     */
+    public function cancel(CancelDonorCommitmentRequest $request, DonorCommitment $commitment): RedirectResponse
+    {
+        $reason = (string) $request->validated('cancellation_reason');
+        $wasCancelled = false;
+        $warningMessage = null;
+
+        DB::transaction(function () use ($commitment, $reason, &$wasCancelled, &$warningMessage): void {
+            /** @var DonorCommitment $locked */
+            $locked = DonorCommitment::query()
+                ->whereKey($commitment->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            if (! $locked->canBeCancelledByDonor()) {
+                $warningMessage = "Komitmen {$locked->pledge_code} sudah berstatus \"{$locked->status->label()}\" sehingga tidak dapat dibatalkan kembali.";
+
+                return;
+            }
+
+            $locked->update([
+                'status' => DonorCommitmentStatus::CANCELLED->value,
+                'cancelled_at' => now(),
+                'cancellation_reason' => $reason,
+            ]);
+
+            $wasCancelled = true;
+        });
+
+        if (! $wasCancelled) {
+            return redirect()
+                ->route('commitments.show', $commitment)
+                ->with('warning', $warningMessage ?? 'Pembatalan komitmen tidak dapat diproses.');
+        }
+
+        return redirect()
+            ->route('commitments.show', $commitment)
+            ->with(
+                'success',
+                "Komitmen donor ({$commitment->pledge_code}) telah dibatalkan secara resmi. Kuota relawan siaga pada kasus ini kini terbuka kembali bagi pendonor lain."
+            );
     }
 
     private function ensureRequestAcceptsPledges(BloodRequest $bloodRequest): void
