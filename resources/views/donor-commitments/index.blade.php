@@ -143,18 +143,10 @@
                         </div>
 
                         <div class="col-lg-4 text-lg-end">
-                            <div class="d-inline-flex flex-wrap justify-content-lg-end gap-2">
-                                @if ($item->isActiveCommitment() && Route::has('coordinations.show'))
-                                    <a href="{{ route('coordinations.show', $item) }}" class="btn btn-dc-secondary btn-sm">
-                                        <i class="bi bi-chat-square-text"></i>
-                                        Koordinasi Titik Temu
-                                    </a>
-                                @endif
-                                <a href="{{ route('commitments.show', $item) }}" class="btn btn-dc-primary btn-sm">
-                                    <i class="bi bi-file-earmark-check"></i>
-                                    Lihat Bukti &amp; Status
-                                </a>
-                            </div>
+                            <a href="{{ route('commitments.show', $item) }}" class="btn btn-dc-primary btn-sm">
+                                <i class="bi bi-file-earmark-check"></i>
+                                Lihat Bukti &amp; Status Kedatangan
+                            </a>
                         </div>
                     </div>
                 </article>

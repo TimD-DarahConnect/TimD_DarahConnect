@@ -1,7 +1,6 @@
 <?php
 
 use App\Http\Controllers\SessionBooking\AnamnesisScreeningController;
-use App\Http\Controllers\SessionBooking\BookingTicketController;
 use App\Http\Controllers\SessionBooking\SessionBookingController;
 use Illuminate\Support\Facades\Route;
 
@@ -25,21 +24,10 @@ Route::prefix('donor/bookings')
             Route::post('/{booking}/screening', [AnamnesisScreeningController::class, 'store'])
                 ->whereNumber('booking')
                 ->name('screening.store');
-
-            Route::patch('/{booking}/reschedule', [BookingTicketController::class, 'reschedule'])
-                ->whereNumber('booking')
-                ->name('reschedule');
-            Route::patch('/{booking}/cancel', [BookingTicketController::class, 'cancel'])
-                ->whereNumber('booking')
-                ->name('cancel');
         });
 
-        Route::middleware(['auth', 'role:pendonor,petugas_udd,admin'])->group(function () {
-            Route::get('/{booking}/ticket', [BookingTicketController::class, 'ticket'])
-                ->whereNumber('booking')
-                ->name('ticket');
-            Route::get('/{booking}', [SessionBookingController::class, 'show'])
-                ->whereNumber('booking')
-                ->name('show');
-        });
+        Route::middleware(['auth', 'role:pendonor,petugas_udd,admin'])
+            ->get('/{booking}', [SessionBookingController::class, 'show'])
+            ->whereNumber('booking')
+            ->name('show');
     });

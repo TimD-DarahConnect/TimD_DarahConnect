@@ -62,15 +62,9 @@
                                     Isi Anamnesis (20 Soal)
                                 </a>
                             @else
-                                @if ($item->hasDigitalTicket() && Route::has('bookings.ticket'))
-                                    <a href="{{ route('bookings.ticket', $item) }}" class="btn btn-dc-primary btn-sm">
-                                        <i class="bi bi-qr-code"></i>
-                                        Tiket QR
-                                    </a>
-                                @endif
-                                <a href="{{ route('bookings.show', $item) }}" class="btn {{ $item->hasDigitalTicket() ? 'btn-dc-secondary' : 'btn-dc-primary' }} btn-sm">
+                                <a href="{{ route('bookings.show', $item) }}" class="btn btn-dc-primary btn-sm">
                                     <i class="bi bi-ticket-perforated"></i>
-                                    Detail Reservasi
+                                    Buka Detail Reservasi
                                 </a>
                             @endif
                         </div>

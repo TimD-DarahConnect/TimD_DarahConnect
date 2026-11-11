@@ -14,8 +14,6 @@ class DonorBooking extends Model
 {
     use HasFactory;
 
-    public const MAX_RESCHEDULE_COUNT = 2;
-
     protected $fillable = [
         'booking_code',
         'qr_token',
@@ -44,7 +42,7 @@ class DonorBooking extends Model
             }
 
             if (empty($booking->qr_token)) {
-                $booking->qr_token = self::generateFreshQrToken();
+                $booking->qr_token = hash('sha256', Str::uuid()->toString().'|'.microtime(true));
             }
         });
     }
@@ -69,11 +67,6 @@ class DonorBooking extends Model
         } while (self::where('booking_code', $code)->exists());
 
         return $code;
-    }
-
-    public static function generateFreshQrToken(): string
-    {
-        return hash('sha256', Str::uuid()->toString().'|'.microtime(true));
     }
 
     public function donor(): BelongsTo
@@ -123,46 +116,5 @@ class DonorBooking extends Model
     {
         return $this->status instanceof DonorBookingStatus
             && $this->status->isActiveReservation();
-    }
-
-    public function hasDigitalTicket(): bool
-    {
-        return in_array($this->status, [
-            DonorBookingStatus::CONFIRMED,
-            DonorBookingStatus::CHECKED_IN,
-            DonorBookingStatus::COMPLETED,
-        ], true) && (bool) $this->screening_passed;
-    }
-
-    public function canBeRescheduled(): bool
-    {
-        if (! $this->isActiveReservation()) {
-            return false;
-        }
-
-        if ((int) $this->reschedule_count >= self::MAX_RESCHEDULE_COUNT) {
-            return false;
-        }
-
-        if ($this->schedule?->service_date !== null && $this->schedule->service_date->lt(today())) {
-            return false;
-        }
-
-        return true;
-    }
-
-    public function canBeCancelled(): bool
-    {
-        return $this->isActiveReservation();
-    }
-
-    public function getRemainingReschedulesAttribute(): int
-    {
-        return max(0, self::MAX_RESCHEDULE_COUNT - (int) $this->reschedule_count);
-    }
-
-    public function getShortVerificationHashAttribute(): string
-    {
-        return strtoupper(substr((string) $this->qr_token, 0, 8));
     }
 }

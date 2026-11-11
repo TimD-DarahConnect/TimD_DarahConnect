@@ -51,17 +51,6 @@
                     </button>
                 @endif
 
-                @if ($isPendingReview && Route::has('verifications.reject'))
-                    <button
-                        type="button"
-                        class="btn btn-dc-soft"
-                        data-dc-open-sheet="rejectRequestSheet"
-                    >
-                        <i class="bi bi-arrow-return-left"></i>
-                        Minta Revisi / Tolak
-                    </button>
-                @endif
-
                 @if ($nextPendingRequest)
                     <a href="{{ route('verifications.show', $nextPendingRequest) }}" class="btn btn-dc-soft" title="Lanjut ke {{ $nextPendingRequest->patient_name }}">
                         <i class="bi bi-skip-forward-fill"></i>
@@ -610,145 +599,6 @@
         </form>
     </aside>
 @endif
-
-@if ($isPendingReview && Route::has('verifications.reject'))
-    @php
-        $selectedDecision = old('decision', 'need_revision');
-    @endphp
-    <!-- Fluid Bottom Sheet: Request Official Revision or Medical Rejection (§1, §2, §5, §12, §14) -->
-    <div class="dc-sheet-backdrop" data-dc-sheet-backdrop="rejectRequestSheet"></div>
-    <aside
-        class="dc-sheet-panel"
-        style="max-width: 40rem;"
-        data-dc-sheet="rejectRequestSheet"
-        aria-hidden="true"
-        aria-labelledby="rejectRequestSheetTitle"
-    >
-        <div class="dc-sheet-handle-area" title="Tarik ke bawah untuk menutup">
-            <span class="dc-sheet-handle"></span>
-        </div>
-
-        <form action="{{ route('verifications.reject', $bloodRequest) }}" method="POST" class="px-4 pb-4 overflow-auto" novalidate>
-            @csrf
-
-            <div class="d-flex align-items-start justify-content-between gap-3 pb-3 mb-3 border-bottom">
-                <div>
-                    <div class="dc-eyebrow text-danger">Tindak Lanjut Verifikasi Medis UDD</div>
-                    <h2 id="rejectRequestSheetTitle" class="dc-title-2 mb-1 mt-1">Minta Revisi atau Tolak Permohonan</h2>
-                    <div class="dc-caption">
-                        Kasus <strong class="dc-tabular text-dark">{{ $bloodRequest->request_code }}</strong> &middot;
-                        <strong class="text-dark">{{ $bloodRequest->patient_name }}</strong>
-                    </div>
-                </div>
-                <button type="button" class="btn btn-dc-soft btn-sm flex-shrink-0" data-dc-close-sheet="rejectRequestSheet" aria-label="Tutup panel revisi atau penolakan">
-                    <i class="bi bi-x-lg"></i>
-                </button>
-            </div>
-
-            <div class="mb-3">
-                <label class="form-label fw-semibold">Pilih Keputusan Tindak Lanjut <span class="text-danger">*</span></label>
-                <div class="vstack gap-2">
-                    <label class="p-3 rounded-4 border d-flex align-items-start gap-2 cursor-pointer dc-pressable bg-light">
-                        <input
-                            type="radio"
-                            name="decision"
-                            value="need_revision"
-                            class="form-check-input mt-1 js-reject-decision-radio"
-                            @checked($selectedDecision === 'need_revision')
-                        >
-                        <div>
-                            <div class="fw-semibold text-dark small">
-                                <i class="bi bi-arrow-return-left text-warning-emphasis me-1"></i>Minta Revisi Data / Perbaikan Berkas
-                            </div>
-                            <div class="dc-caption">
-                                Mengembalikan permohonan ke pemohon agar dapat memperbaiki rincian klinis atau mengunggah ulang surat rujukan dokter yang sah, lalu mengirim kembali ke antrean.
-                            </div>
-                        </div>
-                    </label>
-
-                    <label class="p-3 rounded-4 border d-flex align-items-start gap-2 cursor-pointer dc-pressable bg-light">
-                        <input
-                            type="radio"
-                            name="decision"
-                            value="rejected"
-                            class="form-check-input mt-1 js-reject-decision-radio"
-                            @checked($selectedDecision === 'rejected')
-                        >
-                        <div>
-                            <div class="fw-semibold text-dark small">
-                                <i class="bi bi-x-octagon-fill text-danger me-1"></i>Tolak Permohonan Secara Medis
-                            </div>
-                            <div class="dc-caption">
-                                Menutup permohonan secara permanen apabila dokumen tidak sah, duplikat, atau tidak memenuhi indikasi medis pelayanan transfusi darah.
-                            </div>
-                        </div>
-                    </label>
-                </div>
-                @error('decision')
-                    <div class="text-danger small mt-1">{{ $message }}</div>
-                @enderror
-            </div>
-
-            <div class="mb-3">
-                <span class="dc-caption fw-semibold text-dark d-block mb-2">Template Catatan Klinis Cepat:</span>
-                <div class="d-flex flex-wrap gap-2">
-                    @php
-                        $quickReviewNotes = [
-                            'Lampiran foto/scan surat rujukan dokter buram atau terpotong, mohon unggah ulang dokumen yang terbaca jelas.',
-                            'Golongan darah ABO/Rhesus atau jenis komponen pada formulir belum sesuai dengan surat pengantar DPJP/BDRS.',
-                            'Surat rujukan belum mencantumkan tanda tangan dokter penanggung jawab (DPJP) atau stempel resmi instalasi RS.',
-                            'Dokumen yang dilampirkan tidak valid / bukan merupakan surat pengantar permintaan transfusi darah resmi.',
-                        ];
-                    @endphp
-                    @foreach ($quickReviewNotes as $presetNote)
-                        <button
-                            type="button"
-                            class="btn btn-dc-secondary btn-sm text-start dc-pressable js-reject-note-chip"
-                            data-note="{{ $presetNote }}"
-                            style="font-size: 0.75rem;"
-                        >
-                            {{ $presetNote }}
-                        </button>
-                    @endforeach
-                </div>
-            </div>
-
-            <div class="mb-4">
-                <div class="d-flex align-items-center justify-content-between mb-1">
-                    <label for="reviewNotesInput" class="form-label mb-0">
-                        Catatan Resmi untuk Pemohon <span class="text-danger">*</span>
-                    </label>
-                    <span class="dc-caption dc-tabular"><span id="reviewNotesCharCount">0</span> / 1000</span>
-                </div>
-                <textarea
-                    id="reviewNotesInput"
-                    name="review_notes"
-                    rows="3"
-                    minlength="15"
-                    maxlength="1000"
-                    class="form-control @error('review_notes') is-invalid @enderror"
-                    placeholder="Tuliskan instruksi perbaikan berkas/data atau alasan penolakan medis secara jelas (minimal 15 karakter)..."
-                    required
-                >{{ old('review_notes') }}</textarea>
-                @error('review_notes')
-                    <div class="invalid-feedback">{{ $message }}</div>
-                @enderror
-            </div>
-
-            <div class="d-flex flex-column flex-sm-row justify-content-end gap-2">
-                <button type="button" class="btn btn-dc-secondary" data-dc-close-sheet="rejectRequestSheet">
-                    Batal
-                </button>
-                <button type="submit" class="btn btn-dc-primary px-4">
-                    <i class="bi bi-send-check"></i>
-                    <span id="rejectSubmitLabel">
-                        {{ $selectedDecision === 'rejected' ? 'Konfirmasi Tolak Permohonan' : 'Kirim Permintaan Revisi ke Pemohon' }}
-                    </span>
-                </button>
-            </div>
-        </form>
-    </aside>
-@endif
 @endsection
 
 @push('scripts')
@@ -822,43 +672,6 @@ document.addEventListener('DOMContentLoaded', () => {
     @if ($errors->has('expires_at') || $errors->has('verification_notes'))
         window.requestAnimationFrame(() => {
             window.DarahSheets?.get('approveRequestSheet')?.open();
-        });
-    @endif
-
-    const reviewNotesInput = document.getElementById('reviewNotesInput');
-    const reviewNotesCharCount = document.getElementById('reviewNotesCharCount');
-    const rejectSubmitLabel = document.getElementById('rejectSubmitLabel');
-
-    const updateReviewCount = () => {
-        if (reviewNotesInput && reviewNotesCharCount) {
-            reviewNotesCharCount.textContent = String(reviewNotesInput.value.length);
-        }
-    };
-
-    document.querySelectorAll('.js-reject-note-chip').forEach((chip) => {
-        chip.addEventListener('click', () => {
-            if (!reviewNotesInput) return;
-            reviewNotesInput.value = chip.dataset.note || '';
-            reviewNotesInput.focus();
-            updateReviewCount();
-        });
-    });
-
-    document.querySelectorAll('.js-reject-decision-radio').forEach((radio) => {
-        radio.addEventListener('change', () => {
-            if (!rejectSubmitLabel) return;
-            rejectSubmitLabel.textContent = radio.value === 'rejected'
-                ? 'Konfirmasi Tolak Permohonan'
-                : 'Kirim Permintaan Revisi ke Pemohon';
-        });
-    });
-
-    reviewNotesInput?.addEventListener('input', updateReviewCount);
-    updateReviewCount();
-
-    @if ($errors->has('decision') || $errors->has('review_notes'))
-        window.requestAnimationFrame(() => {
-            window.DarahSheets?.get('rejectRequestSheet')?.open();
         });
     @endif
 });
