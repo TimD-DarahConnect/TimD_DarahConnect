@@ -208,34 +208,9 @@
                                     </div>
                                 @endif
 
-                                @if ($session->relationLoaded('bookings') && $session->bookings->isNotEmpty())
-                                    <div class="mt-2 pt-2 border-top">
-                                        <div class="dc-caption fw-semibold text-dark mb-1">
-                                            Pendaftar Aktif ({{ $session->bookings->count() }} orang):
-                                        </div>
-                                        <div class="d-flex flex-wrap gap-1">
-                                            @foreach ($session->bookings as $reg)
-                                                <span class="badge rounded-pill text-bg-light border text-dark fw-normal dc-tabular">
-                                                    {{ $reg->booking_code }} &middot; {{ $reg->donor?->name }}
-                                                    @if ($reg->donor?->blood_group_label)
-                                                        ({{ $reg->donor->blood_group_label }})
-                                                    @endif
-                                                    &middot; {{ $reg->status->label() }}
-                                                </span>
-                                            @endforeach
-                                        </div>
-                                    </div>
-                                @endif
-
                                 @if (Route::has('schedules.sessions.status'))
-                                    <div class="mt-3 pt-2 border-top d-flex flex-wrap align-items-center justify-content-between gap-2">
-                                        <span class="dc-caption dc-tabular">
-                                            Efektif Siap Pesan:
-                                            <strong class="{{ $session->isBookable() ? 'text-success' : 'text-danger' }}">
-                                                {{ $session->isBookable() ? $session->remaining_quota.' kursi' : '0 (Terkunci/Penuh)' }}
-                                            </strong>
-                                        </span>
-                                        <button type="button" class="btn btn-dc-secondary btn-sm dc-pressable" data-dc-open-sheet="sessionStatusSheet-{{ $session->id }}">
+                                    <div class="mt-3 pt-2 border-top d-flex justify-content-end">
+                                        <button type="button" class="btn btn-dc-secondary btn-sm" data-dc-open-sheet="sessionStatusSheet-{{ $session->id }}">
                                             <i class="bi bi-toggles"></i>
                                             Atur Status Slot
                                         </button>
@@ -249,42 +224,9 @@
         </div>
     </div>
 </section>
-
-@if (Route::has('schedules.sessions.status'))
-    @foreach ($schedule->sessions as $session)
-        @include('donation-schedules.partials.session-status-sheet', [
-            'schedule' => $schedule,
-            'session' => $session,
-        ])
-    @endforeach
-@endif
 @endsection
 
 @push('scripts')
-<script>
-document.addEventListener('DOMContentLoaded', () => {
-    document.querySelectorAll('.js-status-radio').forEach((radio) => {
-        radio.addEventListener('change', () => {
-            const sessionId = radio.dataset.sessionId;
-            const reqBadge = document.getElementById(`noteReqBadge-${sessionId}`);
-            if (reqBadge) {
-                reqBadge.classList.toggle('d-none', radio.value === 'open');
-            }
-        });
-    });
-
-    document.querySelectorAll('.js-issue-preset-btn').forEach((btn) => {
-        btn.addEventListener('click', () => {
-            const targetId = btn.dataset.target;
-            const textarea = targetId ? document.getElementById(targetId) : null;
-            if (textarea) {
-                textarea.value = btn.dataset.note || '';
-                textarea.focus();
-            }
-        });
-    });
-});
-</script>
 @if ($schedule->latitude !== null && $schedule->longitude !== null)
 <script
     src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"

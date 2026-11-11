@@ -19,9 +19,6 @@ Route::middleware(['auth', 'role:pencari_darah'])
         Route::put('/{bloodRequest}', [EmergencyRequestController::class, 'update'])
             ->whereNumber('bloodRequest')
             ->name('update');
-        Route::patch('/{bloodRequest}/cancel', [EmergencyRequestController::class, 'cancel'])
-            ->whereNumber('bloodRequest')
-            ->name('cancel');
     });
 
 Route::middleware(['auth', 'role:pencari_darah,petugas_udd,petugas_rs,admin'])

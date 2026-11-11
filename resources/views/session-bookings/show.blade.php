@@ -53,19 +53,6 @@
                 </div>
             </div>
 
-            @if ($errors->any())
-                <div class="p-3 mb-4 rounded-3 border border-danger-subtle bg-danger-subtle text-danger-emphasis small" role="alert">
-                    <div class="fw-semibold mb-1">
-                        <i class="bi bi-exclamation-circle-fill me-1"></i>Terdapat kendala pada perubahan reservasi:
-                    </div>
-                    <ul class="mb-0 ps-3">
-                        @foreach ($errors->all() as $error)
-                            <li>{{ $error }}</li>
-                        @endforeach
-                    </ul>
-                </div>
-            @endif
-
             <!-- Highlighted Date & Session Window -->
             <div class="p-3 px-4 rounded-4 bg-light border mb-4">
                 <div class="row g-3 align-items-center">
@@ -108,31 +95,10 @@
                     </div>
                 @endif
 
-                @if ($booking->reschedule_count > 0)
-                    <div class="col-12">
-                        <div class="p-3 rounded-3 bg-info-subtle border border-info-subtle small text-dark dc-tabular">
-                            <i class="bi bi-arrow-repeat text-info-emphasis me-1"></i>
-                            <strong>Riwayat Penjadwalan Ulang:</strong> Dipindahkan {{ $booking->reschedule_count }} kali
-                            @if ($booking->previousSession)
-                                (sebelumnya: {{ $booking->previousSession->session_label }}
-                                @if ($booking->previousSession->schedule)
-                                    &middot; {{ $booking->previousSession->schedule->service_date->translatedFormat('d M Y') }}
-                                @endif
-                                )
-                            @endif
-                        </div>
-                    </div>
-                @endif
-
                 @if ($booking->cancellation_reason)
                     <div class="col-12">
                         <div class="p-3 rounded-3 bg-danger-subtle border border-danger-subtle small text-dark">
                             <strong>Alasan Pembatalan:</strong> {{ $booking->cancellation_reason }}
-                            @if ($booking->cancelled_at)
-                                <span class="dc-caption dc-tabular d-block mt-1">
-                                    Dibatalkan pada {{ $booking->cancelled_at->translatedFormat('d M Y, H:i') }} WIB &middot; Kuota sesi telah dikembalikan.
-                                </span>
-                            @endif
                         </div>
                     </div>
                 @endif
@@ -201,7 +167,7 @@
                 </div>
             @endif
 
-            <!-- Self-Screening Anamnesis, Digital QR Ticket, Reschedule, & Cancellation Controls -->
+            <!-- Forward-Compatible Hooks for PBI-19 (Self-Screening Anamnesis) & PBI-20 (QR Ticket, Reschedule, Cancel) -->
             <div class="pt-3 border-top d-flex flex-wrap align-items-center justify-content-between gap-2">
                 <div class="dc-caption">
                     <i class="bi bi-info-circle text-danger me-1"></i>
@@ -216,21 +182,21 @@
                         </a>
                     @endif
 
-                    @if ($booking->hasDigitalTicket() && Route::has('bookings.ticket'))
+                    @if ($isOwnerDonor && $booking->status->value === 'confirmed' && Route::has('bookings.ticket'))
                         <a href="{{ route('bookings.ticket', $booking) }}" class="btn btn-dc-primary btn-sm">
                             <i class="bi bi-qr-code"></i>
                             Tiket QR Digital
                         </a>
                     @endif
 
-                    @if ($isOwnerDonor && $booking->canBeRescheduled() && Route::has('bookings.reschedule'))
+                    @if ($isOwnerDonor && $booking->isActiveReservation() && Route::has('bookings.reschedule'))
                         <button type="button" class="btn btn-dc-secondary btn-sm" data-dc-open-sheet="rescheduleBookingSheet">
                             <i class="bi bi-arrow-repeat"></i>
                             Jadwalkan Ulang
                         </button>
                     @endif
 
-                    @if ($isOwnerDonor && $booking->canBeCancelled() && Route::has('bookings.cancel'))
+                    @if ($isOwnerDonor && $booking->isActiveReservation() && Route::has('bookings.cancel'))
                         <button type="button" class="btn btn-dc-soft btn-sm" data-dc-open-sheet="cancelBookingSheet">
                             <i class="bi bi-slash-circle"></i>
                             Batalkan
@@ -241,10 +207,4 @@
         </div>
     </div>
 </section>
-
-@include('session-bookings.partials.booking-management-sheets', [
-    'booking' => $booking,
-    'isOwnerDonor' => $isOwnerDonor,
-    'rescheduleSchedules' => $rescheduleSchedules ?? collect(),
-])
 @endsection

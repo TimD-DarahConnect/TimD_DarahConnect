@@ -5,11 +5,9 @@ namespace App\Http\Controllers\EmergencyRequest;
 use App\Enums\BloodComponent;
 use App\Enums\BloodRequestStatus;
 use App\Enums\BloodType;
-use App\Enums\DonorCommitmentStatus;
 use App\Enums\Rhesus;
 use App\Enums\UrgencyLevel;
 use App\Http\Controllers\Controller;
-use App\Http\Requests\EmergencyRequest\CancelEmergencyRequest;
 use App\Http\Requests\EmergencyRequest\StoreEmergencyRequest;
 use App\Http\Requests\EmergencyRequest\UpdateEmergencyRequest;
 use App\Models\BloodRequest;
@@ -19,7 +17,6 @@ use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
-use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\View\View;
@@ -266,67 +263,6 @@ class EmergencyRequestController extends Controller
         return redirect()
             ->route('emergency-requests.show', $updatedRequest)
             ->with('success', $message);
-    }
-
-    /**
-     * Officially cancel an emergency blood request with a mandatory reason and release active volunteer pledges.
-     */
-    public function cancel(CancelEmergencyRequest $request, BloodRequest $bloodRequest): RedirectResponse
-    {
-        $reason = (string) $request->validated('cancellation_reason');
-        $releasedPledgesCount = 0;
-
-        $outcome = DB::transaction(function () use ($bloodRequest, $reason, &$releasedPledgesCount): string {
-            /** @var BloodRequest $locked */
-            $locked = BloodRequest::query()
-                ->whereKey($bloodRequest->id)
-                ->lockForUpdate()
-                ->firstOrFail();
-
-            if (! $locked->isCancellableByRequester()) {
-                return 'not_cancellable';
-            }
-
-            $now = now();
-
-            $locked->update([
-                'status' => BloodRequestStatus::CANCELLED->value,
-                'cancelled_at' => $now,
-                'cancellation_reason' => $reason,
-            ]);
-
-            if (Schema::hasTable('donor_commitments')) {
-                $releasedPledgesCount = $locked->commitments()
-                    ->activeCommitment()
-                    ->update([
-                        'status' => DonorCommitmentStatus::CANCELLED->value,
-                        'cancelled_at' => $now,
-                        'cancellation_reason' => 'Permohonan darah ditutup/dibatalkan resmi oleh pihak pemohon: '.$reason,
-                    ]);
-            }
-
-            return 'cancelled';
-        });
-
-        if ($outcome !== 'cancelled') {
-            return redirect()
-                ->route('emergency-requests.show', $bloodRequest)
-                ->with(
-                    'warning',
-                    "Permohonan {$bloodRequest->request_code} sudah berstatus \"{$bloodRequest->fresh()->status->label()}\" sehingga tidak dapat dibatalkan ulang."
-                );
-        }
-
-        $pledgeSuffix = $releasedPledgesCount > 0
-            ? " Sebanyak {$releasedPledgesCount} komitmen relawan pendonor aktif telah dilepas secara otomatis."
-            : '';
-
-        return redirect()
-            ->route('emergency-requests.show', $bloodRequest)
-            ->with(
-                'success',
-                "Permohonan darah ({$bloodRequest->request_code}) telah resmi dibatalkan dan ditarik dari antrean/publikasi.{$pledgeSuffix}"
-            );
     }
 
     /**

@@ -3,7 +3,6 @@
 namespace App\Models;
 
 use App\Enums\DonationScheduleType;
-use App\Enums\SessionOperationalStatus;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -157,17 +156,9 @@ class DonationSchedule extends Model
         return (int) $this->sessions->sum('quota_booked');
     }
 
-    /**
-     * Effective remaining slots across sessions that are currently operationally OPEN.
-     * Paused or emergency-closed sessions immediately reflect 0 bookable remaining slots.
-     */
     public function getRemainingQuotaAttribute(): int
     {
-        return (int) $this->sessions->sum(
-            fn (DonationSession $session): int => $session->operational_status === SessionOperationalStatus::OPEN
-                ? $session->remaining_quota
-                : 0
-        );
+        return max(0, $this->total_quota - $this->total_booked);
     }
 
     public function getOccupancyPercentageAttribute(): int
@@ -178,11 +169,5 @@ class DonationSchedule extends Model
 
         return (int) min(100, round(($this->total_booked / $this->total_quota) * 100));
     }
-
-    public function hasDisruptedSessions(): bool
-    {
-        return $this->sessions->contains(
-            fn (DonationSession $session): bool => $session->operational_status !== SessionOperationalStatus::OPEN
-        );
-    }
 }
+
