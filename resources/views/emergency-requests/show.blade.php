@@ -317,16 +317,153 @@
                                         Menunggu perbaikan data pemohon
                                     @elseif ($bloodRequest->status->value === 'rejected')
                                         Permohonan ditolak verifikasi
+                                    @elseif ($bloodRequest->status->value === 'cancelled')
+                                        Dihentikan karena pembatalan pemohon
                                     @else
                                         Menunggu pemeriksaan Petugas UDD
                                     @endif
                                 </div>
                             </div>
                         </div>
+
+                        @if ($bloodRequest->status->value === 'cancelled' && $bloodRequest->cancelled_at)
+                            <div class="d-flex align-items-start gap-3">
+                                <i class="bi bi-slash-circle-fill text-danger mt-1"></i>
+                                <div>
+                                    <div class="fw-semibold text-danger">Dibatalkan Resmi oleh Pemohon</div>
+                                    <div class="dc-caption dc-tabular">{{ $bloodRequest->cancelled_at->translatedFormat('d M Y, H:i') }} WIB</div>
+                                </div>
+                            </div>
+                        @endif
                     </div>
                 </div>
             </div>
         </div>
     </div>
 </section>
+
+@if ($bloodRequest->isCancellableByRequester())
+    <!-- Fluid Bottom Sheet: Cancel Blood Request with Official Reason (§2, §5, §6, §9, §14) -->
+    <div class="dc-sheet-backdrop" data-dc-sheet-backdrop="cancelRequestSheet"></div>
+    <aside
+        class="dc-sheet-panel"
+        data-dc-sheet="cancelRequestSheet"
+        aria-hidden="true"
+        aria-labelledby="cancelRequestSheetTitle"
+    >
+        <div class="dc-sheet-handle-area" title="Tarik ke bawah untuk menutup">
+            <span class="dc-sheet-handle"></span>
+        </div>
+
+        <form method="POST" action="{{ route('emergency-requests.cancel', $bloodRequest) }}" class="p-4 pt-2 overflow-auto">
+            @csrf
+            @method('PATCH')
+
+            <div class="dc-eyebrow text-danger">Konfirmasi Pembatalan Resmi</div>
+            <h2 id="cancelRequestSheetTitle" class="dc-title-3 mt-1 mb-1">Batalkan Permohonan {{ $bloodRequest->request_code }}?</h2>
+            <p class="dc-caption mb-3">
+                @if ($bloodRequest->status->value === 'active')
+                    Permohonan untuk <strong>{{ $bloodRequest->patient_name }}</strong> sedang tayang di direktori publik. Pembatalan akan segera menyembunyikan permohonan dari katalog pendonor dan membebaskan komitmen relawan yang sedang berjalan.
+                @elseif ($bloodRequest->status->value === 'pending_verification')
+                    Permohonan akan ditarik dari antrean pemeriksaan medis Petugas UDD dan ditandai dibatalkan secara permanen.
+                @else
+                    Permohonan ini akan ditutup dengan status <strong>Dibatalkan Pemohon</strong> beserta catatan alasan resmi Anda.
+                @endif
+            </p>
+
+            <div class="mb-3">
+                <span class="dc-caption fw-semibold text-dark d-block mb-2">Pilih Cepat Alasan Pembatalan:</span>
+                <div class="d-flex flex-wrap gap-2">
+                    @php
+                        $quickCancelReasons = [
+                            'Kebutuhan kantong darah pasien telah terpenuhi melalui BDRS rumah sakit.',
+                            'Jadwal tindakan medis / operasi pasien ditunda oleh dokter penanggung jawab (DPJP).',
+                            'Pasien dirujuk ke fasilitas kesehatan lain sehingga permohonan diperbarui.',
+                            'Terdapat kekeliruan data klinis mendasar dan akan membuat pengajuan baru.',
+                        ];
+                    @endphp
+                    @foreach ($quickCancelReasons as $presetReason)
+                        <button
+                            type="button"
+                            class="btn btn-dc-secondary btn-sm text-start dc-pressable js-cancel-reason-chip"
+                            data-reason="{{ $presetReason }}"
+                            style="font-size: 0.76rem;"
+                        >
+                            {{ $presetReason }}
+                        </button>
+                    @endforeach
+                </div>
+            </div>
+
+            <div class="mb-4">
+                <div class="d-flex align-items-center justify-content-between mb-1">
+                    <label for="cancellation_reason" class="form-label mb-0">
+                        Alasan Resmi Pembatalan <span class="text-danger">*</span>
+                    </label>
+                    <span class="dc-caption dc-tabular"><span id="cancelReasonCharCount">0</span> / 500</span>
+                </div>
+                <textarea
+                    id="cancellation_reason"
+                    name="cancellation_reason"
+                    rows="3"
+                    minlength="10"
+                    maxlength="500"
+                    class="form-control @error('cancellation_reason') is-invalid @enderror"
+                    placeholder="Jelaskan alasan pembatalan permohonan darah ini (minimal 10 karakter)..."
+                    required
+                >{{ old('cancellation_reason') }}</textarea>
+                @error('cancellation_reason')
+                    <div class="invalid-feedback">{{ $message }}</div>
+                @enderror
+            </div>
+
+            <div class="d-flex gap-2">
+                <button type="button" class="btn btn-dc-secondary flex-grow-1" data-dc-close-sheet="cancelRequestSheet">
+                    Kembali
+                </button>
+                <button type="submit" class="btn btn-dc-primary flex-grow-1">
+                    <i class="bi bi-slash-circle"></i>
+                    Ya, Batalkan Permohonan
+                </button>
+            </div>
+        </form>
+    </aside>
+@endif
 @endsection
+
+@if ($bloodRequest->isCancellableByRequester())
+@push('scripts')
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const reasonInput = document.getElementById('cancellation_reason');
+    const countEl = document.getElementById('cancelReasonCharCount');
+
+    const updateCount = () => {
+        if (reasonInput && countEl) {
+            countEl.textContent = String(reasonInput.value.length);
+        }
+    };
+
+    document.querySelectorAll('.js-cancel-reason-chip').forEach((chip) => {
+        chip.addEventListener('click', () => {
+            if (!reasonInput) return;
+            reasonInput.value = chip.dataset.reason || '';
+            reasonInput.focus();
+            updateCount();
+        });
+    });
+
+    if (reasonInput) {
+        reasonInput.addEventListener('input', updateCount);
+        updateCount();
+    }
+
+    @if ($errors->has('cancellation_reason'))
+    if (window.DarahSheets && typeof window.DarahSheets.open === 'function') {
+        window.DarahSheets.open('cancelRequestSheet');
+    }
+    @endif
+});
+</script>
+@endpush
+@endif

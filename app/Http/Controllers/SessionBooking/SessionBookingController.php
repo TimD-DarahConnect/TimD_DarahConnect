@@ -228,18 +228,24 @@ class SessionBookingController extends Controller
     public function show(Request $request, DonorBooking $booking): View
     {
         $user = $request->user();
-        $booking->load(['donor', 'schedule.facility.region', 'session']);
+        $booking->load(['donor', 'schedule.facility.region', 'session', 'previousSession.schedule', 'screening']);
 
         $isOwnerDonor = $user->isDonor() && (int) $booking->donor_id === (int) $user->id;
-        $isAuthorizedStaff = $user->hasRole('petugas_udd', 'admin');
+        $isAuthorizedStaff = $user->isAdmin()
+            || ($user->isUddStaff() && (! $user->facility_id || (int) $booking->schedule?->facility_id === (int) $user->facility_id));
 
         if (! $isOwnerDonor && ! $isAuthorizedStaff) {
             abort(403, 'Anda tidak berwenang mengakses bukti reservasi jadwal ini.');
         }
 
+        $rescheduleSchedules = ($isOwnerDonor && $booking->canBeRescheduled())
+            ? BookingTicketController::loadAvailableRescheduleSchedules($booking)
+            : collect();
+
         return view('session-bookings.show', [
             'booking' => $booking,
             'isOwnerDonor' => $isOwnerDonor,
+            'rescheduleSchedules' => $rescheduleSchedules,
         ]);
     }
 }

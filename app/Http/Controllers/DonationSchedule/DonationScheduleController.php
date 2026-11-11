@@ -182,10 +182,22 @@ class DonationScheduleController extends Controller
             abort(403, 'Anda hanya dapat meninjau detail jadwal pada unit UDD instansi Anda.');
         }
 
-        $schedule->load(['facility.region', 'sessions', 'creator']);
+        $schedule->load([
+            'facility.region',
+            'region',
+            'sessions.bookings' => function ($query): void {
+                $query->whereIn('status', ['confirmed', 'pending_screening'])
+                    ->with('donor')
+                    ->orderBy('created_at');
+            },
+            'creator',
+        ]);
+
+        $hasActiveBookings = $schedule->bookings()->activeReservation()->exists() || $schedule->total_booked > 0;
 
         return view('donation-schedules.show', [
             'schedule' => $schedule,
+            'hasActiveBookings' => $hasActiveBookings,
         ]);
     }
 }
