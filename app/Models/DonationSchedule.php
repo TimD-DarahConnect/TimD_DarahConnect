@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\DonationScheduleType;
+use App\Enums\SessionOperationalStatus;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -13,6 +14,9 @@ use Illuminate\Support\Str;
 class DonationSchedule extends Model
 {
     use HasFactory;
+
+    public const PUBLICATION_DRAFT = 'draft';
+    public const PUBLICATION_PUBLISHED = 'published';
 
     protected $fillable = [
         'schedule_code',
@@ -100,12 +104,42 @@ class DonationSchedule extends Model
 
     public function scopePublished(Builder $query): Builder
     {
-        return $query->where('publication_status', 'published');
+        return $query->where('publication_status', self::PUBLICATION_PUBLISHED);
+    }
+
+    public function scopeDraft(Builder $query): Builder
+    {
+        return $query->where('publication_status', self::PUBLICATION_DRAFT);
     }
 
     public function scopeUpcoming(Builder $query): Builder
     {
         return $query->whereDate('service_date', '>=', today());
+    }
+
+    public function isMobileUnit(): bool
+    {
+        return $this->schedule_type === DonationScheduleType::MOBILE_UNIT;
+    }
+
+    public function isPublished(): bool
+    {
+        return $this->publication_status === self::PUBLICATION_PUBLISHED;
+    }
+
+    public function isDraft(): bool
+    {
+        return $this->publication_status === self::PUBLICATION_DRAFT;
+    }
+
+    public function getPublicationLabelAttribute(): string
+    {
+        return $this->isPublished() ? 'Dipublikasikan' : 'Draf Internal';
+    }
+
+    public function getPublicationPillClassAttribute(): string
+    {
+        return $this->isPublished() ? 'dc-pill-success' : 'dc-pill-warning';
     }
 
     public function getOperatingHoursLabelAttribute(): string
@@ -123,9 +157,17 @@ class DonationSchedule extends Model
         return (int) $this->sessions->sum('quota_booked');
     }
 
+    /**
+     * Effective remaining slots across sessions that are currently operationally OPEN.
+     * Paused or emergency-closed sessions immediately reflect 0 bookable remaining slots.
+     */
     public function getRemainingQuotaAttribute(): int
     {
-        return max(0, $this->total_quota - $this->total_booked);
+        return (int) $this->sessions->sum(
+            fn (DonationSession $session): int => $session->operational_status === SessionOperationalStatus::OPEN
+                ? $session->remaining_quota
+                : 0
+        );
     }
 
     public function getOccupancyPercentageAttribute(): int
@@ -136,5 +178,11 @@ class DonationSchedule extends Model
 
         return (int) min(100, round(($this->total_booked / $this->total_quota) * 100));
     }
-}
 
+    public function hasDisruptedSessions(): bool
+    {
+        return $this->sessions->contains(
+            fn (DonationSession $session): bool => $session->operational_status !== SessionOperationalStatus::OPEN
+        );
+    }
+}

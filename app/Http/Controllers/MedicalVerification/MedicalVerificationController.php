@@ -8,6 +8,7 @@ use App\Enums\UrgencyLevel;
 use App\Enums\VerificationDecision;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\MedicalVerification\ApproveBloodRequest;
+use App\Http\Requests\MedicalVerification\RejectOrReviseBloodRequest;
 use App\Models\BloodRequest;
 use App\Models\RequestVerification;
 use Illuminate\Database\Eloquent\Builder;
@@ -273,6 +274,87 @@ class MedicalVerificationController extends Controller
                 'success',
                 "Permohonan {$approvedRequest->request_code} ({$approvedRequest->patient_name}) resmi disetujui dan dipublikasikan ke komunitas pendonor hingga {$expiresAt->translatedFormat('d M Y, H:i')} WIB."
             );
+    }
+
+    /**
+     * Reject an invalid blood request or return it to the requester (`need_revision`) with mandatory official clinical notes.
+     */
+    public function reject(RejectOrReviseBloodRequest $request, BloodRequest $bloodRequest): RedirectResponse
+    {
+        if ($bloodRequest->status === BloodRequestStatus::DRAFT) {
+            abort(404, 'Draf permohonan belum dikirim ke antrean verifikasi medis.');
+        }
+
+        $validated = $request->validated();
+        $decision = VerificationDecision::from((string) $validated['decision']);
+        $notes = (string) $validated['review_notes'];
+
+        $resultingStatus = $decision === VerificationDecision::NEED_REVISION
+            ? BloodRequestStatus::NEED_REVISION
+            : BloodRequestStatus::REJECTED;
+
+        $abortReason = null;
+
+        $updatedRequest = DB::transaction(function () use (
+            $bloodRequest,
+            $request,
+            $decision,
+            $resultingStatus,
+            $notes,
+            &$abortReason
+        ): ?BloodRequest {
+            /** @var BloodRequest $locked */
+            $locked = BloodRequest::query()
+                ->whereKey($bloodRequest->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            if ($locked->status !== BloodRequestStatus::PENDING_VERIFICATION) {
+                $abortReason = "Permohonan {$locked->request_code} saat ini berstatus \"{$locked->status->label()}\" sehingga keputusan revisi/penolakan tidak dapat diterapkan.";
+
+                return null;
+            }
+
+            $decidedAt = now();
+            $previousStatus = $locked->status->value;
+
+            $locked->update([
+                'status' => $resultingStatus->value,
+                'verified_by' => $request->user()->id,
+                'verified_at' => $decidedAt,
+                'verification_notes' => $notes,
+                'expires_at' => null,
+            ]);
+
+            if (Schema::hasTable('request_verifications')) {
+                RequestVerification::create([
+                    'blood_request_id' => $locked->id,
+                    'reviewer_id' => $request->user()->id,
+                    'decision' => $decision->value,
+                    'previous_status' => $previousStatus,
+                    'resulting_status' => $resultingStatus->value,
+                    'expires_at' => null,
+                    'notes' => $notes,
+                    'decided_at' => $decidedAt,
+                ]);
+            }
+
+            return $locked->fresh();
+        });
+
+        if (! $updatedRequest instanceof BloodRequest) {
+            return redirect()
+                ->route('verifications.show', $bloodRequest)
+                ->with('warning', $abortReason ?? 'Permohonan tidak dapat diproses saat ini.');
+        }
+
+        $successMessage = $decision === VerificationDecision::NEED_REVISION
+            ? "Permohonan {$updatedRequest->request_code} dikembalikan kepada pemohon dengan status \"Perlu Revisi Data\" beserta catatan perbaikan resmi UDD."
+            : "Permohonan {$updatedRequest->request_code} resmi ditolak secara medis dan ditutup dari antrean publikasi.";
+
+        return redirect()
+            ->route('verifications.show', $updatedRequest)
+            ->with('success', $successMessage);
     }
 
     /**

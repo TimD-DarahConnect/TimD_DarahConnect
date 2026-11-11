@@ -62,6 +62,7 @@
                         'pending_verification' => 'Menunggu Verifikasi',
                         'need_revision' => 'Perlu Revisi',
                         'active' => 'Aktif',
+                        'cancelled' => 'Dibatalkan',
                     ];
                 @endphp
                 @foreach ($filters as $key => $label)
@@ -117,6 +118,11 @@
                                             &middot; {{ \Illuminate\Support\Str::limit($item->clinical_diagnosis, 55) }}
                                         @endif
                                     </div>
+                                    @if ($item->status->value === 'cancelled' && $item->cancellation_reason)
+                                        <div class="dc-caption text-danger mt-1">
+                                            <i class="bi bi-slash-circle me-1"></i>Dibatalkan: {{ \Illuminate\Support\Str::limit($item->cancellation_reason, 85) }}
+                                        </div>
+                                    @endif
                                 </div>
                             </div>
                         </div>

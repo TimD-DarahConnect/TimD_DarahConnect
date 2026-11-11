@@ -55,11 +55,24 @@
                             </div>
                         </div>
 
-                        <div class="col-lg-4 text-lg-end">
-                            <a href="{{ route('bookings.show', $item) }}" class="btn btn-dc-primary btn-sm">
-                                <i class="bi bi-ticket-perforated"></i>
-                                Buka Detail Reservasi
-                            </a>
+                        <div class="col-lg-4 text-lg-end d-flex flex-wrap gap-2 justify-content-lg-end">
+                            @if ($item->status->value === 'pending_screening' && Route::has('bookings.screening.show'))
+                                <a href="{{ route('bookings.screening.show', $item) }}" class="btn btn-dc-primary btn-sm">
+                                    <i class="bi bi-clipboard2-pulse"></i>
+                                    Isi Anamnesis (20 Soal)
+                                </a>
+                            @else
+                                @if ($item->hasDigitalTicket() && Route::has('bookings.ticket'))
+                                    <a href="{{ route('bookings.ticket', $item) }}" class="btn btn-dc-primary btn-sm">
+                                        <i class="bi bi-qr-code"></i>
+                                        Tiket QR
+                                    </a>
+                                @endif
+                                <a href="{{ route('bookings.show', $item) }}" class="btn {{ $item->hasDigitalTicket() ? 'btn-dc-secondary' : 'btn-dc-primary' }} btn-sm">
+                                    <i class="bi bi-ticket-perforated"></i>
+                                    Detail Reservasi
+                                </a>
+                            @endif
                         </div>
                     </div>
                 </article>
