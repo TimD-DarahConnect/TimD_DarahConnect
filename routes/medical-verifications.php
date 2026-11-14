@@ -17,4 +17,7 @@ Route::middleware(['auth', 'role:petugas_udd,admin'])
         Route::post('/{bloodRequest}/approve', [MedicalVerificationController::class, 'approve'])
             ->whereNumber('bloodRequest')
             ->name('approve');
+        Route::post('/{bloodRequest}/reject', [MedicalVerificationController::class, 'reject'])
+            ->whereNumber('bloodRequest')
+            ->name('reject');
     });

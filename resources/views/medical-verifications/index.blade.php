@@ -233,6 +233,11 @@
                                             </span>
                                         @endif
                                     </div>
+                                    @if (in_array($item->status->value, ['need_revision', 'rejected'], true) && $item->verification_notes)
+                                        <div class="dc-caption {{ $item->status->value === 'rejected' ? 'text-danger' : 'text-warning-emphasis' }} mt-2">
+                                            <i class="bi bi-chat-left-quote me-1"></i>Catatan UDD: "{{ \Illuminate\Support\Str::limit($item->verification_notes, 90) }}"
+                                        </div>
+                                    @endif
                                 </div>
                             </div>
                         </div>
