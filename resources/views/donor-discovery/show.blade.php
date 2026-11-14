@@ -218,6 +218,20 @@
                             <div class="dc-caption text-dark mt-1">
                                 {{ $compatibilityMeta['explanation'] }}
                             </div>
+
+                            @if (is_array($bestMatchMeta ?? null) && ($bestMatchMeta['eligible'] ?? false))
+                                <div class="mt-2 pt-2 border-top d-flex flex-wrap align-items-center justify-content-between gap-2">
+                                    <span class="dc-pill {{ $bestMatchMeta['pill_class'] }} dc-tabular">
+                                        <i class="bi {{ $bestMatchMeta['icon'] }}"></i>
+                                        Best Match {{ $bestMatchMeta['score'] }}% &middot; {{ $bestMatchMeta['tier_label'] }}
+                                    </span>
+                                    <span class="dc-caption dc-tabular">
+                                        Biologis {{ $bestMatchMeta['breakdown']['compatibility'] }}/35 &middot;
+                                        Klinis {{ $bestMatchMeta['breakdown']['clinical'] }}/35 &middot;
+                                        Jarak {{ $bestMatchMeta['breakdown']['proximity'] }}/20
+                                    </span>
+                                </div>
+                            @endif
                         </div>
                     @endif
 
