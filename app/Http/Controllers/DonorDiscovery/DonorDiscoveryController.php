@@ -10,6 +10,7 @@ use App\Enums\UrgencyLevel;
 use App\Http\Controllers\Controller;
 use App\Models\BloodRequest;
 use App\Models\Region;
+use App\Services\DonorDiscovery\BestMatchRecommendationService;
 use App\Services\DonorDiscovery\GeospatialDistanceService;
 use App\Services\DonorDiscovery\TransfusionCompatibilityService;
 use Illuminate\Database\Eloquent\Builder;
@@ -21,15 +22,23 @@ class DonorDiscoveryController extends Controller
 {
     public function __construct(
         private readonly GeospatialDistanceService $geospatialService,
-        private readonly TransfusionCompatibilityService $compatibilityService
+        private readonly TransfusionCompatibilityService $compatibilityService,
+        private readonly BestMatchRecommendationService $bestMatchService
     ) {}
 
     /**
-     * Display the active emergency blood request catalog with compatibility, component, region, urgency & distance filters.
+     * Display the active emergency blood request catalog and the personalized Best Match recommendation tab.
      */
     public function index(Request $request): View
     {
         $origin = $this->geospatialService->resolveOrigin($request);
+        $user = $request->user();
+        $bestMatchReadiness = $this->bestMatchService->evaluateDonorReadiness($user);
+
+        $activeTab = (string) $request->query('tab', 'all');
+        if (! in_array($activeTab, ['all', 'best_match'], true)) {
+            $activeTab = 'all';
+        }
 
         $sortBy = (string) $request->query('sort', 'urgency_nearest');
         if (! in_array($sortBy, ['urgency_nearest', 'nearest', 'urgency', 'deadline'], true)) {
@@ -66,85 +75,157 @@ class DonorDiscoveryController extends Controller
 
         $searchQuery = trim((string) $request->query('q', ''));
 
-        $baseQuery = BloodRequest::with(['facility.region'])
+        // Live global count of active requests catalog & personalized Best Match count for segmented tab badges
+        $allActiveRequestsCount = BloodRequest::query()
             ->active()
-            ->whereColumn('bags_fulfilled', '<', 'bags_needed');
+            ->whereColumn('bags_fulfilled', '<', 'bags_needed')
+            ->count();
 
-        if ($componentFilter !== '') {
-            $baseQuery->where('component_type', $componentFilter);
+        $bestMatchTotalCount = 0;
+        if ($bestMatchReadiness['is_ready'] && $user !== null) {
+            $bestMatchCountQuery = BloodRequest::query()
+                ->active()
+                ->whereColumn('bags_fulfilled', '<', 'bags_needed');
+
+            $this->compatibilityService->applyDonorCompatibilityScope(
+                $bestMatchCountQuery,
+                $user->blood_type?->value,
+                $user->rhesus?->value
+            );
+
+            $bestMatchTotalCount = $bestMatchCountQuery->count();
         }
 
-        if ($regionIdFilter !== null) {
-            $baseQuery->whereHas('facility', function (Builder $facilityQuery) use ($regionIdFilter): void {
-                $facilityQuery->where('region_id', $regionIdFilter);
-            });
-        }
+        if ($activeTab === 'best_match') {
+            if (! $bestMatchReadiness['is_ready'] || $user === null) {
+                $sortedItems = collect();
+                $compatibilityReachSummary = null;
+            } else {
+                $bestMatchQuery = BloodRequest::with(['facility.region'])
+                    ->active()
+                    ->whereColumn('bags_fulfilled', '<', 'bags_needed');
 
-        if ($bloodTypeFilter !== '' || $rhesusFilter !== '') {
-            if ($matchMode === 'compatible') {
                 $this->compatibilityService->applyDonorCompatibilityScope(
-                    $baseQuery,
+                    $bestMatchQuery,
+                    $user->blood_type?->value,
+                    $user->rhesus?->value,
+                    $componentFilter ?: null
+                );
+
+                if ($componentFilter !== '') {
+                    $bestMatchQuery->where('component_type', $componentFilter);
+                }
+
+                if ($regionIdFilter !== null) {
+                    $bestMatchQuery->whereHas('facility', function (Builder $facilityQuery) use ($regionIdFilter): void {
+                        $facilityQuery->where('region_id', $regionIdFilter);
+                    });
+                }
+
+                if ($searchQuery !== '') {
+                    $this->applyKeywordSearch($bestMatchQuery, $searchQuery);
+                }
+
+                $enrichedForDonor = $bestMatchQuery->get()->map(function (BloodRequest $bloodRequest) use ($origin, $user): BloodRequest {
+                    $enriched = $this->enrichWithGeospatialMetrics($bloodRequest, $origin['latitude'], $origin['longitude']);
+                    $enriched->setAttribute(
+                        'compatibility_meta',
+                        $this->compatibilityService->evaluateForRequest($user->blood_type, $user->rhesus, $bloodRequest)
+                    );
+
+                    return $enriched;
+                });
+
+                $sortedItems = $this->bestMatchService->rankForDonor($user, $enrichedForDonor);
+                $compatibilityReachSummary = $this->compatibilityService->summarizeDonorReach(
+                    $user->blood_type,
+                    $user->rhesus,
+                    $componentFilter ?: null
+                );
+            }
+        } else {
+            $baseQuery = BloodRequest::with(['facility.region'])
+                ->active()
+                ->whereColumn('bags_fulfilled', '<', 'bags_needed');
+
+            if ($componentFilter !== '') {
+                $baseQuery->where('component_type', $componentFilter);
+            }
+
+            if ($regionIdFilter !== null) {
+                $baseQuery->whereHas('facility', function (Builder $facilityQuery) use ($regionIdFilter): void {
+                    $facilityQuery->where('region_id', $regionIdFilter);
+                });
+            }
+
+            if ($bloodTypeFilter !== '' || $rhesusFilter !== '') {
+                if ($matchMode === 'compatible') {
+                    $this->compatibilityService->applyDonorCompatibilityScope(
+                        $baseQuery,
+                        $bloodTypeFilter ?: null,
+                        $rhesusFilter ?: null,
+                        $componentFilter ?: null
+                    );
+                } else {
+                    if ($bloodTypeFilter !== '') {
+                        $baseQuery->where('blood_type', $bloodTypeFilter);
+                    }
+                    if ($rhesusFilter !== '') {
+                        $baseQuery->where('rhesus', $rhesusFilter);
+                    }
+                }
+            }
+
+            if ($searchQuery !== '') {
+                $this->applyKeywordSearch($baseQuery, $searchQuery);
+            }
+
+            $referenceDonorAbo = null;
+            $referenceDonorRhesus = null;
+
+            if ($matchMode === 'compatible' && $bloodTypeFilter !== '' && $rhesusFilter !== '') {
+                $referenceDonorAbo = $bloodTypeFilter;
+                $referenceDonorRhesus = $rhesusFilter;
+            } elseif ($user !== null && $user->isDonor() && $user->blood_type !== null && $user->rhesus !== null) {
+                $referenceDonorAbo = $user->blood_type->value;
+                $referenceDonorRhesus = $user->rhesus->value;
+            }
+
+            $items = $baseQuery->get()->map(function (BloodRequest $bloodRequest) use (
+                $origin,
+                $referenceDonorAbo,
+                $referenceDonorRhesus,
+                $user,
+                $bestMatchReadiness,
+                $bloodTypeFilter,
+                $rhesusFilter
+            ): BloodRequest {
+                $enriched = $this->enrichWithGeospatialMetrics($bloodRequest, $origin['latitude'], $origin['longitude']);
+
+                if ($referenceDonorAbo !== null && $referenceDonorRhesus !== null) {
+                    $enriched->setAttribute(
+                        'compatibility_meta',
+                        $this->compatibilityService->evaluateForRequest($referenceDonorAbo, $referenceDonorRhesus, $bloodRequest)
+                    );
+                }
+
+                if ($bestMatchReadiness['is_ready'] && $user !== null && $bloodTypeFilter === '' && $rhesusFilter === '') {
+                    $enriched->setAttribute('best_match_meta', $this->bestMatchService->scoreRequestForDonor($user, $enriched));
+                }
+
+                return $enriched;
+            });
+
+            $sortedItems = $this->sortCatalog($items, $sortBy)->values();
+
+            $compatibilityReachSummary = ($matchMode === 'compatible' && ($bloodTypeFilter !== '' || $rhesusFilter !== ''))
+                ? $this->compatibilityService->summarizeDonorReach(
                     $bloodTypeFilter ?: null,
                     $rhesusFilter ?: null,
                     $componentFilter ?: null
-                );
-            } else {
-                if ($bloodTypeFilter !== '') {
-                    $baseQuery->where('blood_type', $bloodTypeFilter);
-                }
-                if ($rhesusFilter !== '') {
-                    $baseQuery->where('rhesus', $rhesusFilter);
-                }
-            }
+                )
+                : null;
         }
-
-        if ($searchQuery !== '') {
-            $like = '%'.$searchQuery.'%';
-            $baseQuery->where(function (Builder $q) use ($like): void {
-                $q->where('request_code', 'like', $like)
-                    ->orWhere('clinical_diagnosis', 'like', $like)
-                    ->orWhere('component_type', 'like', $like)
-                    ->orWhereHas('facility', function (Builder $facilityQuery) use ($like): void {
-                        $facilityQuery->where('name', 'like', $like)
-                            ->orWhere('address', 'like', $like)
-                            ->orWhereHas('region', function (Builder $regionQuery) use ($like): void {
-                                $regionQuery->where('name', 'like', $like)
-                                    ->orWhere('province_name', 'like', $like);
-                            });
-                    });
-            });
-        }
-
-        $user = $request->user();
-        $referenceDonorAbo = null;
-        $referenceDonorRhesus = null;
-
-        if ($matchMode === 'compatible' && $bloodTypeFilter !== '' && $rhesusFilter !== '') {
-            $referenceDonorAbo = $bloodTypeFilter;
-            $referenceDonorRhesus = $rhesusFilter;
-        } elseif ($user !== null && $user->isDonor() && $user->blood_type !== null && $user->rhesus !== null) {
-            $referenceDonorAbo = $user->blood_type->value;
-            $referenceDonorRhesus = $user->rhesus->value;
-        }
-
-        $items = $baseQuery->get()->map(function (BloodRequest $bloodRequest) use (
-            $origin,
-            $referenceDonorAbo,
-            $referenceDonorRhesus
-        ): BloodRequest {
-            $enriched = $this->enrichWithGeospatialMetrics($bloodRequest, $origin['latitude'], $origin['longitude']);
-
-            if ($referenceDonorAbo !== null && $referenceDonorRhesus !== null) {
-                $enriched->setAttribute(
-                    'compatibility_meta',
-                    $this->compatibilityService->evaluateForRequest($referenceDonorAbo, $referenceDonorRhesus, $bloodRequest)
-                );
-            }
-
-            return $enriched;
-        });
-
-        $sortedItems = $this->sortCatalog($items, $sortBy)->values();
 
         $summary = [
             'active_cases' => $sortedItems->count(),
@@ -157,30 +238,40 @@ class DonorDiscoveryController extends Controller
                     $sortedItems->min(fn (BloodRequest $r): ?float => $r->getAttribute('distance_km'))
                 )
                 : '-',
+            'top_match_score' => $activeTab === 'best_match' && $sortedItems->isNotEmpty()
+                ? (int) ($sortedItems->first()?->getAttribute('best_match_meta')['score'] ?? 0)
+                : null,
         ];
 
         $mapMarkers = $sortedItems
             ->filter(fn (BloodRequest $r): bool => $r->facility?->latitude !== null && $r->facility?->longitude !== null)
-            ->map(fn (BloodRequest $r): array => [
-                'id' => $r->id,
-                'code' => $r->request_code,
-                'blood_group' => $r->blood_group_label,
-                'component' => $r->component_type->value,
-                'remaining_bags' => $r->remaining_bags,
-                'urgency' => $r->urgency_level->value,
-                'urgency_label' => $r->urgency_level->label(),
-                'facility_name' => $r->facility->name,
-                'region_name' => $r->facility->region?->name ?? '',
-                'latitude' => (float) $r->facility->latitude,
-                'longitude' => (float) $r->facility->longitude,
-                'distance_label' => $r->getAttribute('distance_label'),
-                'travel_minutes' => $r->getAttribute('estimated_minutes'),
-                'detail_url' => route('discovery.show', array_filter([
-                    'bloodRequest' => $r->id,
-                    'lat' => $origin['source'] === 'gps' ? $origin['latitude'] : null,
-                    'lng' => $origin['source'] === 'gps' ? $origin['longitude'] : null,
-                ])),
-            ])
+            ->map(function (BloodRequest $r) use ($origin): array {
+                $bestMatchMeta = $r->getAttribute('best_match_meta');
+
+                return [
+                    'id' => $r->id,
+                    'code' => $r->request_code,
+                    'blood_group' => $r->blood_group_label,
+                    'component' => $r->component_type->value,
+                    'remaining_bags' => $r->remaining_bags,
+                    'urgency' => $r->urgency_level->value,
+                    'urgency_label' => $r->urgency_level->label(),
+                    'facility_name' => $r->facility->name,
+                    'region_name' => $r->facility->region?->name ?? '',
+                    'latitude' => (float) $r->facility->latitude,
+                    'longitude' => (float) $r->facility->longitude,
+                    'distance_label' => $r->getAttribute('distance_label'),
+                    'travel_minutes' => $r->getAttribute('estimated_minutes'),
+                    'match_score' => is_array($bestMatchMeta) && ($bestMatchMeta['eligible'] ?? false)
+                        ? $bestMatchMeta['score']
+                        : null,
+                    'detail_url' => route('discovery.show', array_filter([
+                        'bloodRequest' => $r->id,
+                        'lat' => $origin['source'] === 'gps' ? $origin['latitude'] : null,
+                        'lng' => $origin['source'] === 'gps' ? $origin['longitude'] : null,
+                    ])),
+                ];
+            })
             ->values();
 
         $regionsByProvince = Region::query()
@@ -189,21 +280,16 @@ class DonorDiscoveryController extends Controller
             ->get()
             ->groupBy('province_name');
 
-        $compatibilityReachSummary = ($matchMode === 'compatible' && ($bloodTypeFilter !== '' || $rhesusFilter !== ''))
-            ? $this->compatibilityService->summarizeDonorReach(
-                $bloodTypeFilter ?: null,
-                $rhesusFilter ?: null,
-                $componentFilter ?: null
-            )
-            : null;
-
-        $hasActiveFilters = $bloodTypeFilter !== ''
-            || $rhesusFilter !== ''
+        $hasActiveFilters = ($activeTab === 'all' && ($bloodTypeFilter !== '' || $rhesusFilter !== ''))
             || $componentFilter !== ''
             || $regionIdFilter !== null
             || $searchQuery !== '';
 
         return view('donor-discovery.index', [
+            'activeTab' => $activeTab,
+            'bestMatchReadiness' => $bestMatchReadiness,
+            'allActiveRequestsCount' => $allActiveRequestsCount,
+            'bestMatchTotalCount' => $bestMatchTotalCount,
             'requests' => $sortedItems,
             'origin' => $origin,
             'sortBy' => $sortBy,
@@ -242,12 +328,18 @@ class DonorDiscoveryController extends Controller
 
         $user = $request->user();
         $compatibilityMeta = null;
+        $bestMatchMeta = null;
         if ($user !== null && $user->isDonor()) {
             $compatibilityMeta = $this->compatibilityService->evaluateForRequest(
                 $user->blood_type,
                 $user->rhesus,
                 $bloodRequest
             );
+            $bloodRequest->setAttribute('compatibility_meta', $compatibilityMeta);
+
+            if ($user->blood_type !== null && $user->rhesus !== null) {
+                $bestMatchMeta = $this->bestMatchService->scoreRequestForDonor($user, $bloodRequest);
+            }
         }
 
         $nearbyRequests = BloodRequest::with(['facility.region'])
@@ -265,9 +357,29 @@ class DonorDiscoveryController extends Controller
             'bloodRequest' => $bloodRequest,
             'origin' => $origin,
             'compatibilityMeta' => $compatibilityMeta,
+            'bestMatchMeta' => $bestMatchMeta,
             'patientInitials' => $this->maskPatientName($bloodRequest->patient_name),
             'nearbyRequests' => $nearbyRequests,
         ]);
+    }
+
+    private function applyKeywordSearch(Builder $query, string $searchQuery): void
+    {
+        $like = '%'.$searchQuery.'%';
+
+        $query->where(function (Builder $q) use ($like): void {
+            $q->where('request_code', 'like', $like)
+                ->orWhere('clinical_diagnosis', 'like', $like)
+                ->orWhere('component_type', 'like', $like)
+                ->orWhereHas('facility', function (Builder $facilityQuery) use ($like): void {
+                    $facilityQuery->where('name', 'like', $like)
+                        ->orWhere('address', 'like', $like)
+                        ->orWhereHas('region', function (Builder $regionQuery) use ($like): void {
+                            $regionQuery->where('name', 'like', $like)
+                                ->orWhere('province_name', 'like', $like);
+                        });
+                });
+        });
     }
 
     private function enrichWithGeospatialMetrics(BloodRequest $bloodRequest, float $originLat, float $originLng): BloodRequest
