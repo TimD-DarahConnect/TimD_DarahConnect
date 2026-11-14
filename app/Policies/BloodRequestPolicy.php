@@ -43,6 +43,22 @@ class BloodRequestPolicy
     }
 
     /**
+     * Determine whether the seeker can cancel their own blood request.
+     */
+    public function cancel(User $user, BloodRequest $bloodRequest): Response
+    {
+        if (! $this->owns($user, $bloodRequest)) {
+            return Response::deny('Anda hanya dapat membatalkan permohonan darah yang Anda ajukan sendiri.');
+        }
+
+        if (! $bloodRequest->isCancellableByRequester()) {
+            return Response::deny('Permohonan darah ini sudah berstatus tertutup atau telah dibatalkan sebelumnya.');
+        }
+
+        return Response::allow();
+    }
+
+    /**
      * Determine whether the user can access the confidential doctor referral letter.
      */
     public function viewReferralLetter(User $user, BloodRequest $bloodRequest): Response
