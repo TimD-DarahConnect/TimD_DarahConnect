@@ -31,6 +31,13 @@
             </div>
 
             <div class="d-flex flex-wrap gap-2">
+                @if (Route::has('schedules.occupancy.index'))
+                    <a href="{{ route('schedules.occupancy.index') }}" class="btn btn-dc-secondary">
+                        <i class="bi bi-sliders2-vertical"></i>
+                        Pantau Okupansi Slot
+                    </a>
+                @endif
+
                 <a href="{{ route('schedules.index') }}" class="btn btn-dc-secondary">
                     <i class="bi bi-building-fill-plus"></i>
                     Jadwal Gedung UDD

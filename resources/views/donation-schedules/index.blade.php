@@ -30,6 +30,13 @@
             </div>
 
             <div class="d-flex flex-wrap gap-2">
+                @if (Route::has('schedules.occupancy.index'))
+                    <a href="{{ route('schedules.occupancy.index') }}" class="btn btn-dc-secondary">
+                        <i class="bi bi-sliders2-vertical"></i>
+                        Pantau Okupansi Slot
+                    </a>
+                @endif
+
                 @if (Route::has('schedules.mobile.index'))
                     <a href="{{ route('schedules.mobile.index') }}" class="btn btn-dc-secondary">
                         <i class="bi bi-truck-front"></i>
