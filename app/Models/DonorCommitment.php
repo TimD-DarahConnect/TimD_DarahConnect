@@ -2,11 +2,13 @@
 
 namespace App\Models;
 
+use App\Enums\BloodRequestStatus;
 use App\Enums\DonorCommitmentStatus;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Str;
 
 class DonorCommitment extends Model
@@ -27,7 +29,12 @@ class DonorCommitment extends Model
         'cancelled_at',
         'cancellation_reason',
         'meeting_point',
+        'building_floor',
+        'companion_alias',
+        'meeting_instructions',
         'coordination_code',
+        'meeting_point_updated_at',
+        'meeting_point_confirmed_at',
     ];
 
     protected static function booted(): void
@@ -53,6 +60,8 @@ class DonorCommitment extends Model
             'arrived_at' => 'datetime',
             'completed_at' => 'datetime',
             'cancelled_at' => 'datetime',
+            'meeting_point_updated_at' => 'datetime',
+            'meeting_point_confirmed_at' => 'datetime',
         ];
     }
 
@@ -73,6 +82,11 @@ class DonorCommitment extends Model
     public function donor(): BelongsTo
     {
         return $this->belongsTo(User::class, 'donor_id');
+    }
+
+    public function coordinationMessages(): HasMany
+    {
+        return $this->hasMany(CoordinationMessage::class, 'donor_commitment_id')->orderBy('created_at');
     }
 
     public function scopeActiveCommitment(Builder $query): Builder
@@ -105,6 +119,20 @@ class DonorCommitment extends Model
             DonorCommitmentStatus::COMMITTED,
             DonorCommitmentStatus::ARRIVED,
         ], true);
+    }
+
+    public function canCoordinateActively(): bool
+    {
+        if (! $this->isActiveCommitment()) {
+            return false;
+        }
+
+        $requestStatus = $this->bloodRequest?->status;
+        if ($requestStatus !== null && $requestStatus !== BloodRequestStatus::ACTIVE) {
+            return false;
+        }
+
+        return true;
     }
 
     public function getMaskedDonorAliasAttribute(): string
