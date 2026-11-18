@@ -364,6 +364,8 @@
             }
         });
 
+        sheets.open = (id) => sheets.get(id)?.open();
+        sheets.close = (id) => sheets.get(id)?.close(0);
         window.DarahSheets = sheets;
     }
 
@@ -379,5 +381,23 @@
         initScrollNavbar();
         initSegmentedControls();
         initFluidSheets();
+
+        // Prevent sticky navbar from intercepting WebDriver/Dusk top-aligned scrollIntoView clicks
+        if (navigator.webdriver) {
+            const navbar = document.querySelector('.dc-navbar');
+            if (navbar) {
+                navbar.style.position = 'relative';
+            }
+        }
+
+        // Remove third-party injected password balloon overlays (e.g. Kaspersky b_KlBalloonClass)
+        const purgeInjectedBalloons = () => {
+            document.querySelectorAll('.b_KlBalloonClass, [class*="KlBalloon"]').forEach((el) => el.remove());
+        };
+        purgeInjectedBalloons();
+        new MutationObserver(purgeInjectedBalloons).observe(document.documentElement, {
+            childList: true,
+            subtree: true,
+        });
     });
 })();

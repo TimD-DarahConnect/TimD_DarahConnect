@@ -111,7 +111,7 @@
             </div>
         @endif
 
-        <div class="row g-4 g-xl-5 align-items-start">
+        <div class="row g-4 g-xl-5">
             <!-- Left Column: Context, Role Summary & Privacy Guarantee -->
             <div class="col-lg-5 order-2 order-lg-1">
                 <div class="dc-card p-4 position-sticky" style="top: 5.5rem;">
