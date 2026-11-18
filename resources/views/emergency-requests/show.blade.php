@@ -459,9 +459,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     @if ($errors->has('cancellation_reason'))
-    if (window.DarahSheets && typeof window.DarahSheets.open === 'function') {
-        window.DarahSheets.open('cancelRequestSheet');
-    }
+    window.DarahSheets?.get('cancelRequestSheet')?.open();
     @endif
 });
 </script>

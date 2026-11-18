@@ -99,7 +99,7 @@
         <form action="{{ route('emergency-requests.store') }}" method="POST" enctype="multipart/form-data" id="emergencyRequestForm" novalidate>
             @csrf
 
-            <div class="row g-4 g-xl-5 align-items-start">
+            <div class="row g-4 g-xl-5">
                 <!-- Left Column: Clinical Form Sections -->
                 <div class="col-lg-8">
                     <!-- Section 1: Data Pasien & Klinis -->

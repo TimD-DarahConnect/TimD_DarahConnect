@@ -59,13 +59,33 @@
     -moz-osx-font-smoothing: grayscale;
 }
 
+html {
+    scroll-padding-top: 5.5rem;
+}
+
 body {
     background-color: var(--dc-canvas);
     color: var(--dc-ink);
     min-height: 100vh;
     display: flex;
     flex-direction: column;
-    overflow-x: hidden;
+    overflow-x: clip;
+}
+
+button,
+.btn,
+a,
+input,
+select,
+textarea,
+[role="button"],
+[role="tab"] {
+    scroll-margin-top: 5.5rem;
+}
+
+/* Ensure columns containing sticky cards stretch to full row height so position:sticky stays pinned below navbar */
+.row.align-items-start > [class*="col-"]:has(.position-sticky, [style*="sticky"]) {
+    align-self: stretch !important;
 }
 
 /* ==========================================================================
@@ -543,4 +563,15 @@ body {
     .form-select {
         border-width: 1.5px;
     }
+}
+
+/* Neutralize third-party antivirus/password-manager injected overlays (e.g. Kaspersky) */
+.b_KlBalloonClass,
+[class*="KlBalloon"] {
+    display: none !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
+    width: 0 !important;
+    height: 0 !important;
+    opacity: 0 !important;
 }
