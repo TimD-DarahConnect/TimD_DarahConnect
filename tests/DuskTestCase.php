@@ -67,7 +67,11 @@ abstract class DuskTestCase extends BaseTestCase
                     while (microtime(true) < $deadline) {
                         try {
                             $element = $this->resolver->findOrFail($selector);
-                            if (Str::contains($element->getText(), $text, $ignoreCase)) {
+                            $renderedText = $element->getText();
+                            if (Str::contains($renderedText, $text, true)) {
+                                if (! $ignoreCase && ! Str::contains($renderedText, $text, false)) {
+                                    $ignoreCase = true;
+                                }
                                 break;
                             }
                         } catch (StaleElementReferenceException|NoSuchElementException) {
